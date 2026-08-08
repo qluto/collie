@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { Text, useInput } from "ink";
 import { displayWidth, hideCursor, placeCursor } from "./cursor.ts";
 
@@ -22,13 +22,24 @@ export function JpTextInput(props: {
 }): React.JSX.Element {
   const { value, onChange, onSubmit, row, col } = props;
 
+  // An IME commit arrives as a rapid burst that Ink may deliver across
+  // SEVERAL useInput calls inside one React batch. Each call would see the
+  // same stale `value` prop, so computing `value + input` loses every chunk
+  // but the last (observed as the first characters vanishing). Accumulate
+  // synchronously in a ref instead; the effect below adopts external updates.
+  const valueRef = useRef(value);
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+
   useInput((input, key) => {
     if (key.return) {
       onSubmit();
       return;
     }
     if (key.backspace || key.delete) {
-      onChange(Array.from(value).slice(0, -1).join(""));
+      valueRef.current = Array.from(valueRef.current).slice(0, -1).join("");
+      onChange(valueRef.current);
       return;
     }
     if (
@@ -36,7 +47,8 @@ export function JpTextInput(props: {
       !key.ctrl && !key.meta && !key.escape && !key.tab &&
       !key.upArrow && !key.downArrow && !key.leftArrow && !key.rightArrow
     ) {
-      onChange(value + input);
+      valueRef.current += input;
+      onChange(valueRef.current);
     }
   });
 
