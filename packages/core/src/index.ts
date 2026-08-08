@@ -7,6 +7,7 @@ export * from "./journal.ts";
 export * from "./herdr/types.ts";
 export * from "./herdr/client.ts";
 export * from "./schedule.ts";
+export * from "./repos.ts";
 export * from "./quota/gate.ts";
 export * from "./quota/ccusage.ts";
 export * from "./quota/limits.ts";

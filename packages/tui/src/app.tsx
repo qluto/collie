@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Box, Text, render, useApp, useInput } from "ink";
 import { spawnSync } from "node:child_process";
 import {
-  cancelTask, configPath, createTask, getUsage, loadConfig, taskFilePath, transition, updateTask,
+  cancelTask, configPath, createTask, discoverRepos, getUsage, loadConfig, taskFilePath, transition, updateTask,
 } from "@agent-hub/core";
 import type { Task, UsageSnapshot } from "@agent-hub/core";
 import { useHubSnapshot } from "./state.ts";
@@ -212,7 +212,17 @@ function App(): React.JSX.Element {
               return { worktree: true, permissionMode: "acceptEdits" as const };
             }
           })()}
-          recentRepos={[...new Set(snap.tasks.map((t) => t.repo))]}
+          knownRepos={(() => {
+            let discovered: string[] = [];
+            try {
+              discovered = discoverRepos(loadConfig().repos.roots);
+            } catch {
+              // invalid config: fall back to recent-task repos only
+            }
+            // recent-task repos first (most likely targets), then the rest
+            const recent = [...new Set(snap.tasks.map((t) => t.repo))];
+            return [...recent, ...discovered.filter((r) => !recent.includes(r))];
+          })()}
           onSubmit={submitNewTask}
           onCancel={() => setOverlay({ kind: "none" })}
         />

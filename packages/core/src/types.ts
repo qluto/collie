@@ -94,6 +94,10 @@ export interface Config {
   herdr: {
     socketPath: string;
   };
+  repos: {
+    /** Parent directories scanned (2 levels deep) for git repos in the new-task picker. */
+    roots: string[];
+  };
   defaults: {
     permissionMode: PermissionMode;
     worktree: boolean;

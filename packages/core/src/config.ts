@@ -35,6 +35,11 @@ L = 20000000
 [herdr]
 socket_path = "~/.config/herdr/herdr.sock"
 
+[repos]
+# Parent directories scanned (2 levels deep) for the new-task repo picker.
+# Works for flat layouts (~/dev/projects) and ghq host roots (~/ghq/github.com).
+roots = []
+
 [defaults]
 permission_mode = "acceptEdits"
 worktree = true
@@ -63,6 +68,9 @@ export const DEFAULT_CONFIG: Config = {
   },
   herdr: {
     socketPath: expandTilde("~/.config/herdr/herdr.sock"),
+  },
+  repos: {
+    roots: [],
   },
   defaults: {
     permissionMode: "acceptEdits",
@@ -166,6 +174,12 @@ export function parseConfig(toml: string): Config {
     },
     herdr: {
       socketPath: expandTilde(pick("herdr.socket_path", d.herdr.socketPath, (v) => str(v, "herdr.socket_path"))),
+    },
+    repos: {
+      roots: pick("repos.roots", d.repos.roots, (v) => {
+        if (!Array.isArray(v)) fail("repos.roots must be an array of strings");
+        return v.map((r, i) => expandTilde(str(r, `repos.roots[${i}]`)));
+      }),
     },
     defaults: {
       permissionMode: pick("defaults.permission_mode", d.defaults.permissionMode, (v) => oneOf(v, "defaults.permission_mode", PERMISSION_MODES as readonly Config["defaults"]["permissionMode"][])),

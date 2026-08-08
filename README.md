@@ -29,6 +29,9 @@ agent-hub tui
 
 タスクは `~/.agent-hub/tasks/*.md`（YAML frontmatter + 本文=プロンプト）。
 `~/.agent-hub/config.toml` で WIP 制限・深夜ウィンドウ・トークン予算を調整します。
+`[repos] roots = ["~/dev/projects", "~/ghq/github.com"]` を設定すると、TUI の
+新規タスクフォームでリポジトリを一覧から選べます（2階層まで探索するので
+ghq 形式の org 階層にも対応。入力でフィルタ、↑↓で選択、自由入力も可）。
 既定では 00:00–07:00 が full モード、それ以外は conservative（小さめのタスクのみ、
 予算の 35% まで）です。
 

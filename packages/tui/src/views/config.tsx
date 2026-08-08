@@ -18,6 +18,7 @@ export function ConfigView(): React.JSX.Element {
         <Text>{`       sizes S/M/L = ${(c.quota.sizeEstimateTokens.S / 1e6).toFixed(0)}/${(c.quota.sizeEstimateTokens.M / 1e6).toFixed(0)}/${(c.quota.sizeEstimateTokens.L / 1e6).toFixed(0)}M, conservative max ${c.quota.conservativeMaxSize}`}</Text>
         <Text>{`defaults: permission ${c.defaults.permissionMode}, worktree ${c.defaults.worktree ? "on" : "off"} (${c.defaults.worktreeRoot})`}</Text>
         <Text>{`herdr: ${c.herdr.socketPath}`}</Text>
+        <Text>{`repos: ${c.repos.roots.length ? c.repos.roots.join(", ") : "(no roots configured)"}`}</Text>
       </>
     );
   } catch (err) {
