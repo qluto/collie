@@ -1,6 +1,6 @@
 import * as path from "node:path";
-import { getTask, transition, updateTask } from "@agent-hub/core";
-import type { HerdrAgentInfo, Task } from "@agent-hub/core";
+import { getTask, transition, updateTask } from "@collie/core";
+import type { HerdrAgentInfo, Task } from "@collie/core";
 import { log, trackPane, untrackPane, type DispatcherCtx } from "./ctx.ts";
 import { pointerPrompt, settingsPath, writeRunArtifacts } from "./artifacts.ts";
 
@@ -73,7 +73,7 @@ async function ensureWorktree(ctx: DispatcherCtx, task: Task): Promise<WorktreeR
     path.basename(task.repo),
     task.id,
   );
-  const branch = task.branch ?? `agent-hub/${task.id}`;
+  const branch = task.branch ?? `collie/${task.id}`;
   type WtResponse = { workspace?: { workspace_id?: string }; worktree?: { path?: string } };
   try {
     const res = await ctx.herdr.request<WtResponse>("worktree.create", {
@@ -139,8 +139,8 @@ export async function dispatchTask(ctx: DispatcherCtx, task: Task): Promise<void
       cwd,
       ...(workspaceId ? { workspace_id: workspaceId } : {}),
       env: {
-        AGENT_HUB_TASK_ID: task.id,
-        ...(process.env.AGENT_HUB_HOME ? { AGENT_HUB_HOME: process.env.AGENT_HUB_HOME } : {}),
+        COLLIE_TASK_ID: task.id,
+        ...(process.env.COLLIE_HOME ? { COLLIE_HOME: process.env.COLLIE_HOME } : {}),
       },
       focus: false,
     });
@@ -227,7 +227,7 @@ export async function dispatchTask(ctx: DispatcherCtx, task: Task): Promise<void
     { paneId, tabId, workspaceId, ...(task.worktree ? { worktreePath: cwd } : {}) },
     { source: "dispatcher" },
   );
-  await reportStatus(ctx, task.id, paneId, `agent-hub ▶ ${task.title}`);
+  await reportStatus(ctx, task.id, paneId, `collie ▶ ${task.title}`);
   log(ctx, `task ${task.id} running in pane ${paneId}`);
 }
 
@@ -246,7 +246,7 @@ export async function reportStatus(ctx: DispatcherCtx, taskId: string, paneId: s
     });
     await ctx.herdr.request("pane.report_metadata", {
       pane_id: paneId,
-      source: "agent-hub",
+      source: "collie",
       custom_status: text,
       seq,
     });

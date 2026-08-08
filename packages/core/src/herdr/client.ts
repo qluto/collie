@@ -11,7 +11,7 @@ interface WireResponse {
   error?: { code: string; message: string };
 }
 
-const debug = process.env.AGENT_HUB_DEBUG
+const debug = process.env.COLLIE_DEBUG
   ? (...args: unknown[]) => console.error("[herdr]", ...args)
   : () => {};
 

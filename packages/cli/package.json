@@ -1,13 +1,13 @@
 {
-  "name": "@agent-hub/cli",
+  "name": "@collie/cli",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "bin": {
-    "agent-hub": "./src/index.ts"
+    "collie": "./src/index.ts"
   },
   "dependencies": {
-    "@agent-hub/core": "workspace:*",
-    "@agent-hub/tui": "workspace:*"
+    "@collie/core": "workspace:*",
+    "@collie/tui": "workspace:*"
   }
 }

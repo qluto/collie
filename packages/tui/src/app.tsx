@@ -3,8 +3,8 @@ import { Box, Text, render, useApp, useInput } from "ink";
 import { spawnSync } from "node:child_process";
 import {
   cancelTask, configPath, createTask, discoverRepos, getUsage, loadConfig, taskFilePath, transition, updateTask,
-} from "@agent-hub/core";
-import type { Task, UsageSnapshot } from "@agent-hub/core";
+} from "@collie/core";
+import type { Task, UsageSnapshot } from "@collie/core";
 import { useHubSnapshot } from "./state.ts";
 import { Board, COLUMNS, columnTasks } from "./views/board.tsx";
 import { Dashboard } from "./views/dashboard.tsx";
@@ -192,7 +192,7 @@ function App(): React.JSX.Element {
     <Box flexDirection="column" height={rows}>
       <Box gap={2}>
         <Text bold color="magenta">
-          agent-hub
+          collie
         </Text>
         {(["board", "dashboard", "config"] as Tab[]).map((t, i) => (
           <Text key={t} bold={tab === t} underline={tab === t} dimColor={tab !== t}>

@@ -34,7 +34,7 @@ export function withLock<T>(fn: () => T): T {
         // unreadable/torn lock file: treat as contended, retry below
       }
       if (Date.now() > deadline) {
-        throw new Error(`agent-hub: could not acquire lock ${p} within ${TIMEOUT_MS}ms`);
+        throw new Error(`collie: could not acquire lock ${p} within ${TIMEOUT_MS}ms`);
       }
       sleepSync(RETRY_MS);
     }

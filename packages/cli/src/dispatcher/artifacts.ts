@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { runsDir } from "@agent-hub/core";
-import type { Task } from "@agent-hub/core";
+import { runsDir } from "@collie/core";
+import type { Task } from "@collie/core";
 
 /** Absolute "bun <cli-entry>" invocation used in prompts and hook settings. */
 export function absBin(): string {

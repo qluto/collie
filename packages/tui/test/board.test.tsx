@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import React from "react";
 import { render } from "ink-testing-library";
 import { Board, COLUMNS, columnTasks } from "../src/views/board.tsx";
-import type { Task } from "@agent-hub/core";
+import type { Task } from "@collie/core";
 
 const task = (over: Partial<Task>): Task => ({
   id: "t-20260808-aaaa",

@@ -19,7 +19,7 @@ export function setRepaint(fn: () => void): void {
  */
 export function editInEditor(initial: string, suffix = ".md"): string | null {
   const editor = process.env.EDITOR ?? "vi";
-  const tmp = path.join(os.tmpdir(), `agent-hub-edit-${process.pid}-${Date.now()}${suffix}`);
+  const tmp = path.join(os.tmpdir(), `collie-edit-${process.pid}-${Date.now()}${suffix}`);
   fs.writeFileSync(tmp, initial);
 
   const wasRaw = process.stdin.isRaw;

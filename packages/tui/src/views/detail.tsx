@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { tailEvents } from "@agent-hub/core";
-import type { Task } from "@agent-hub/core";
+import { tailEvents } from "@collie/core";
+import type { Task } from "@collie/core";
 
 export function Detail(props: { task: Task }): React.JSX.Element {
   const { task } = props;

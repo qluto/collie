@@ -1,4 +1,4 @@
-# agent-hub
+# collie
 
 Kanban-style task queue for Claude Code sessions, orchestrated through
 [Herdr](https://herdr.dev). Queue up coding tasks ahead of time; a dispatcher
@@ -10,25 +10,25 @@ preferring the night hours you configure.
 ```sh
 # 1. 依存関係と CLI
 bun install
-# ~/.local/bin に agent-hub シムを置く（または bun link）
+# ~/.local/bin に collie シムを置く（または bun link）
 printf '#!/bin/sh\nexec %s %s "$@"\n' "$(which bun)" "$PWD/packages/cli/src/index.ts" \
-  > ~/.local/bin/agent-hub && chmod +x ~/.local/bin/agent-hub
+  > ~/.local/bin/collie && chmod +x ~/.local/bin/collie
 
 # 2. 環境チェック（herdr ソケット / claude / ccusage）
-agent-hub doctor
+collie doctor
 
 # 3. タスクを積む（--prompt を省略すると $EDITOR が開く）
-agent-hub task add --repo ~/dev/projects/myapp --title "flaky テストを直す" --queue
+collie task add --repo ~/dev/projects/myapp --title "flaky テストを直す" --queue
 
 # 4. ディスパッチャを常駐させる（launchd）
-agent-hub dispatcher install
+collie dispatcher install
 
 # 5. カンバン TUI（Herdr のペイン内で開くのがおすすめ）
-agent-hub tui
+collie tui
 ```
 
-タスクは `~/.agent-hub/tasks/*.md`（YAML frontmatter + 本文=プロンプト）。
-`~/.agent-hub/config.toml` で WIP 制限・深夜ウィンドウ・トークン予算を調整します。
+タスクは `~/.collie/tasks/*.md`（YAML frontmatter + 本文=プロンプト）。
+`~/.collie/config.toml` で WIP 制限・深夜ウィンドウ・トークン予算を調整します。
 `[repos] roots = ["~/dev/projects", "~/ghq/github.com"]` を設定すると、TUI の
 新規タスクフォームでリポジトリを一覧から選べます（2階層まで探索するので
 ghq 形式の org 階層にも対応。入力でフィルタ、↑↓で選択、自由入力も可）。
@@ -50,7 +50,7 @@ task .md files ──> dispatcher (launchd, 30s tick)
                 --settings hooks) → inject one-line prompt pointer → Enter
                       │
                 claude session ──hooks──> task file heartbeats / blocked / requeue
-                      └── final action: `agent-hub task complete <id> --summary …`
+                      └── final action: `collie task complete <id> --summary …`
                           → review column (human promotes to done in the TUI)
 ```
 
@@ -79,11 +79,11 @@ Key design decisions, learned the hard way:
 ## CLI
 
 ```
-agent-hub task add|list|show|queue|backlog|retry|cancel|done|complete|fail
-agent-hub dispatcher run [--once] [--verbose] | status | install | uninstall
-agent-hub tui
-agent-hub doctor
-agent-hub hook <name>        # internal: called by claude hooks
+collie task add|list|show|queue|backlog|retry|cancel|done|complete|fail
+collie dispatcher run [--once] [--verbose] | status | install | uninstall
+collie tui
+collie doctor
+collie hook <name>        # internal: called by claude hooks
 ```
 
 ## Development
@@ -97,8 +97,8 @@ bunx tsc --noEmit
 Monorepo: `packages/core` (store, herdr client, quota), `packages/cli`
 (dispatcher, hooks, task commands), `packages/tui` (Ink kanban).
 
-Runtime data lives in `~/.agent-hub/` (override with `AGENT_HUB_HOME`).
-`AGENT_HUB_DEBUG=1` logs raw socket frames; `AGENT_HUB_CCUSAGE_BIN` overrides
+Runtime data lives in `~/.collie/` (override with `COLLIE_HOME`).
+`COLLIE_DEBUG=1` logs raw socket frames; `COLLIE_CCUSAGE_BIN` overrides
 the usage estimator (used by tests).
 
 ## v1 limitations

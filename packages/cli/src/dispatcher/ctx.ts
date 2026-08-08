@@ -1,5 +1,5 @@
-import type { Config, HerdrAgentInfo, HerdrAgentStatus } from "@agent-hub/core";
-import { HerdrClient, type SubscriptionHandle } from "@agent-hub/core";
+import type { Config, HerdrAgentInfo, HerdrAgentStatus } from "@collie/core";
+import { HerdrClient, type SubscriptionHandle } from "@collie/core";
 
 /** Live info the dispatcher tracks per running task pane. */
 export interface PaneTracker {

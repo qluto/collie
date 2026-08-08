@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { configPath, loadConfig } from "@agent-hub/core";
+import { configPath, loadConfig } from "@collie/core";
 
 export function ConfigView(): React.JSX.Element {
   let body: React.JSX.Element;

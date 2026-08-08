@@ -1,5 +1,5 @@
 {
-  "name": "agent-hub-monorepo",
+  "name": "collie-monorepo",
   "private": true,
   "workspaces": [
     "packages/*"

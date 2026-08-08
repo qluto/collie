@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import {
   ConfigError, dispatcherStatePath, ensureDataDirs, listTasks, loadConfig,
   type DispatcherState, type ScheduleMode,
-} from "@agent-hub/core";
+} from "@collie/core";
 import { createCtx, log, vlog, type DispatcherCtx } from "./ctx.ts";
 import { dispatchTask } from "./dispatch.ts";
 import { reconcile } from "./reconcile.ts";
@@ -75,7 +75,7 @@ export async function runDispatcher(opts: { once?: boolean; verbose?: boolean })
 
   const existing = readState();
   if (existing && existing.pid !== process.pid && pidAlive(existing.pid)) {
-    console.error(`agent-hub dispatcher already running (pid ${existing.pid})`);
+    console.error(`collie dispatcher already running (pid ${existing.pid})`);
     return 1;
   }
 

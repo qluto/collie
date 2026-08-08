@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import type { Task, TaskStatus } from "@agent-hub/core";
+import type { Task, TaskStatus } from "@collie/core";
 
 export const COLUMNS: Array<{ title: string; statuses: TaskStatus[] }> = [
   { title: "Backlog", statuses: ["backlog"] },

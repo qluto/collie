@@ -1,4 +1,4 @@
-# agent-hub build plan
+# collie build plan
 
 Plan: /Users/qluto/.claude/plans/expressive-bubbling-avalanche.md
 Design doc: /Users/qluto/.claude/plans/expressive-bubbling-avalanche-agent-ahub-plan-0de8102b23c5fcfe.md
@@ -8,7 +8,7 @@ Design doc: /Users/qluto/.claude/plans/expressive-bubbling-avalanche-agent-ahub-
 - [x] core: types, paths, config, lock, store, journal
 - [x] cli: task add/list/show/queue/backlog/retry/cancel/complete/fail, doctor (partial)
 - [x] Tests: store unit + illegal transitions + 2-process concurrency (rev=400) — 13 pass
-- [x] bun link → `agent-hub` bin
+- [x] bun link → `collie` bin
 
 ## Phase 1 — MVP end-to-end loop
 - [x] herdr client (request one-shot, subscribe long-lived) + fake-socket tests (6 pass)
@@ -62,6 +62,6 @@ Deliberate deviation from the design doc: sidebar reporting uses
 report_metadata only (see Phase 4 note); completion callback is pre-allowed in
 generated settings.json permissions so it never blocks at 3am.
 
-The launchd dispatcher (com.qluto.agent-hub.dispatcher) is installed and
-running against the real ~/.agent-hub with the default config (00:00–07:00
+The launchd dispatcher (com.qluto.collie.dispatcher) is installed and
+running against the real ~/.collie with the default config (00:00–07:00
 full throttle). Queue is empty until real tasks are added.

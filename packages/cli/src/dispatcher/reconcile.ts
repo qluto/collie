@@ -1,5 +1,5 @@
-import { listTasks, transition } from "@agent-hub/core";
-import type { HerdrAgentInfo } from "@agent-hub/core";
+import { listTasks, transition } from "@collie/core";
+import type { HerdrAgentInfo } from "@collie/core";
 import { log, trackPane, type DispatcherCtx } from "./ctx.ts";
 import { requeueOrFail } from "./dispatch.ts";
 

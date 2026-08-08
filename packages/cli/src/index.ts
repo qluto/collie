@@ -4,18 +4,18 @@ import { runDoctor } from "./commands/doctor.ts";
 import { runHookCommand } from "./commands/hook.ts";
 import { runDispatcherCommand } from "./commands/dispatcher.ts";
 
-const USAGE = `agent-hub — task queue for Claude Code sessions on Herdr
+const USAGE = `collie — task queue for Claude Code sessions on Herdr
 
 Usage:
-  agent-hub task add --repo <path> --title <t> [--size S|M|L] [--priority N]
+  collie task add --repo <path> --title <t> [--size S|M|L] [--priority N]
                      [--no-worktree] [--permission-mode <m>] [--queue]
                      [--prompt <text>]           (omit --prompt to open $EDITOR)
-  agent-hub task list [--status s1,s2] [--json]
-  agent-hub task show <id>
-  agent-hub task queue|backlog|retry|cancel|done <id>
-  agent-hub task complete <id> --summary "<text>"
-  agent-hub task fail <id> --reason "<text>" [--retryable]
-  agent-hub doctor
+  collie task list [--status s1,s2] [--json]
+  collie task show <id>
+  collie task queue|backlog|retry|cancel|done <id>
+  collie task complete <id> --summary "<text>"
+  collie task fail <id> --reason "<text>" [--retryable]
+  collie doctor
 `;
 
 async function main(argv: string[]): Promise<number> {
@@ -31,7 +31,7 @@ async function main(argv: string[]): Promise<number> {
       return runHookCommand(rest);
     case "tui": {
       // Lazy import keeps ink/react out of dispatcher and hook processes.
-      const { runTui } = await import("@agent-hub/tui");
+      const { runTui } = await import("@collie/tui");
       runTui();
       return new Promise<number>(() => {}); // ink owns the process from here
     }
@@ -42,7 +42,7 @@ async function main(argv: string[]): Promise<number> {
       console.log(USAGE);
       return 0;
     default:
-      console.error(`agent-hub: unknown command "${group}"\n`);
+      console.error(`collie: unknown command "${group}"\n`);
       console.log(USAGE);
       return 2;
   }

@@ -5,12 +5,12 @@ import * as path from "node:path";
 import { spawn } from "node:child_process";
 
 function freshHome(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-hub-test-"));
-  process.env.AGENT_HUB_HOME = dir;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "collie-test-"));
+  process.env.COLLIE_HOME = dir;
   return dir;
 }
 
-// Import lazily after AGENT_HUB_HOME is set per-test (paths read env dynamically,
+// Import lazily after COLLIE_HOME is set per-test (paths read env dynamically,
 // so a single static import is fine as long as env is set before calls).
 import {
   createTask, getTask, listTasks, transition, updateTask, cancelTask,
@@ -38,7 +38,7 @@ describe("store basics", () => {
     expect(got!.priority).toBe(5);
     expect(got!.prompt).toBe("Do the thing.\n\nWith **markdown**.\n");
     expect(got!.rev).toBe(0);
-    expect(got!.branch).toBe(`agent-hub/${t.id}`);
+    expect(got!.branch).toBe(`collie/${t.id}`);
   });
 
   test("serialize/parse round-trip with run sub-object", () => {
@@ -127,14 +127,14 @@ describe("transitions", () => {
 
 describe("concurrency", () => {
   test("two processes hammering updateTask: no lost updates, no torn files", async () => {
-    const home = process.env.AGENT_HUB_HOME!;
+    const home = process.env.COLLIE_HOME!;
     const t = createTask({ title: "hammer", repo: "/tmp", prompt: "p" });
     const hammer = path.join(import.meta.dir, "hammer.ts");
     const N = 200;
     const run = (label: string) =>
       new Promise<number>((resolve, reject) => {
         const child = spawn(process.execPath, [hammer, t.id, String(N), label], {
-          env: { ...process.env, AGENT_HUB_HOME: home },
+          env: { ...process.env, COLLIE_HOME: home },
           stdio: ["ignore", "inherit", "inherit"],
         });
         child.once("exit", (code) => (code === 0 ? resolve(0) : reject(new Error(`${label} exited ${code}`))));

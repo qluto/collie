@@ -1,5 +1,5 @@
 {
-  "name": "@agent-hub/core",
+  "name": "@collie/core",
   "version": "0.1.0",
   "private": true,
   "type": "module",

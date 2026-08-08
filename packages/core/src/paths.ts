@@ -2,10 +2,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as fs from "node:fs";
 
-/** Root data dir. Overridable for tests via AGENT_HUB_HOME (empty string = unset). */
+/** Root data dir. Overridable for tests via COLLIE_HOME (empty string = unset). */
 export function hubHome(): string {
-  const env = process.env.AGENT_HUB_HOME;
-  return env && env.length > 0 ? env : path.join(os.homedir(), ".agent-hub");
+  const env = process.env.COLLIE_HOME;
+  return env && env.length > 0 ? env : path.join(os.homedir(), ".collie");
 }
 
 export function tasksDir(): string {

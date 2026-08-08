@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { blockedUntil, loadConfig, msUntilModeChange, resolveMode } from "@agent-hub/core";
-import type { Config, UsageSnapshot } from "@agent-hub/core";
+import { blockedUntil, loadConfig, msUntilModeChange, resolveMode } from "@collie/core";
+import type { Config, UsageSnapshot } from "@collie/core";
 import type { HubSnapshot } from "../state.ts";
 
 function gauge(used: number, cap: number, width = 24): string {
@@ -85,7 +85,7 @@ export function Dashboard(props: { snap: HubSnapshot; usage: UsageSnapshot | nul
             <Text wrap="truncate-end">decision: {d.lastDecision}</Text>
           </>
         ) : (
-          <Text color="yellow">not running (agent-hub dispatcher install)</Text>
+          <Text color="yellow">not running (collie dispatcher install)</Text>
         )}
       </Box>
 

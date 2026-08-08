@@ -193,7 +193,7 @@ export function parseConfig(toml: string): Config {
 }
 
 /**
- * Load config from ~/.agent-hub/config.toml. Writes the default template on
+ * Load config from ~/.collie/config.toml. Writes the default template on
  * first run so the user has something to edit. Throws ConfigError when invalid.
  */
 export function loadConfig(): Config {

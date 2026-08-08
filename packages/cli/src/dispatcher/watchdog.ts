@@ -1,4 +1,4 @@
-import { detectLimitHit, getUsage, listTasks, readQuotaState, transition, writeQuotaState } from "@agent-hub/core";
+import { detectLimitHit, getUsage, listTasks, readQuotaState, transition, writeQuotaState } from "@collie/core";
 import { log, untrackPane, type DispatcherCtx } from "./ctx.ts";
 import { extractText, reportStatus, requeueOrFail } from "./dispatch.ts";
 
@@ -42,12 +42,12 @@ export async function watchdog(ctx: DispatcherCtx): Promise<void> {
     if (!idleTimedOut) continue;
 
     transition(task.id, "review", undefined, { source: "watchdog" });
-    if (paneId) await reportStatus(ctx, task.id, paneId, `agent-hub ⚠ needs review: ${task.title}`);
+    if (paneId) await reportStatus(ctx, task.id, paneId, `collie ⚠ needs review: ${task.title}`);
     untrackPane(ctx, task.id);
     log(ctx, `task ${task.id} idle ${Math.round((now - lastActivity) / 60000)}min without completion -> review`);
     try {
       await ctx.herdr.request("notification.show", {
-        title: "agent-hub",
+        title: "collie",
         body: `${task.id} needs review (went idle without completing)`,
         sound: "request",
       });
@@ -95,7 +95,7 @@ async function scrapeLimit(ctx: DispatcherCtx, taskId: string, paneId: string): 
   untrackPane(ctx, taskId);
   try {
     await ctx.herdr.request("notification.show", {
-      title: "agent-hub",
+      title: "collie",
       body: `${hit.kind} limit hit; queue paused until ${until.toLocaleTimeString()}`,
       sound: "request",
     });

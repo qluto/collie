@@ -1,11 +1,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { HerdrClient, getTask, logsDir, transition, updateTask } from "@agent-hub/core";
+import { HerdrClient, getTask, logsDir, transition, updateTask } from "@collie/core";
 
 /**
  * Claude Code hook entrypoints. Contract: NEVER block or fail the session —
  * always exit 0, keep total work well under 200ms, swallow and log errors.
- * Task identity comes from AGENT_HUB_TASK_ID (set by the dispatcher's
+ * Task identity comes from COLLIE_TASK_ID (set by the dispatcher's
  * agent.start env); pane identity from HERDR_PANE_ID (set by Herdr).
  */
 
@@ -32,7 +32,7 @@ async function readStdinJson(timeoutMs = 500): Promise<Record<string, unknown>> 
 
 export async function runHookCommand(argv: string[]): Promise<number> {
   const [name] = argv;
-  const taskId = process.env.AGENT_HUB_TASK_ID;
+  const taskId = process.env.COLLIE_TASK_ID;
   if (!taskId || !name) return 0; // not one of our sessions — stay silent
   try {
     const payload = await readStdinJson();
@@ -76,7 +76,7 @@ export async function runHookCommand(argv: string[]): Promise<number> {
             try {
               await new HerdrClient(socketPath).request(
                 "notification.show",
-                { title: "agent-hub", body: `${taskId} is waiting for input/permission`, sound: "request" },
+                { title: "collie", body: `${taskId} is waiting for input/permission`, sound: "request" },
                 { timeoutMs: 2000 },
               );
             } catch {

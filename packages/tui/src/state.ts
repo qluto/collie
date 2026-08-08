@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import {
   dispatcherStatePath, hubHome, listTasks, readQuotaState, tailEvents, tasksDir,
   type DispatcherState, type JournalEvent, type QuotaState, type Task,
-} from "@agent-hub/core";
+} from "@collie/core";
 
 export interface HubSnapshot {
   tasks: Task[];

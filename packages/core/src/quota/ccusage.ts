@@ -6,7 +6,7 @@ let cache: UsageSnapshot | undefined;
 
 /** Command prefix, overridable for tests (e.g. a fixture script). */
 function ccusageBin(): string {
-  return process.env.AGENT_HUB_CCUSAGE_BIN ?? "bunx ccusage";
+  return process.env.COLLIE_CCUSAGE_BIN ?? "bunx ccusage";
 }
 
 function runJson(args: string): unknown {

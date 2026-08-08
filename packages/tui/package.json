@@ -1,5 +1,5 @@
 {
-  "name": "@agent-hub/tui",
+  "name": "@collie/tui",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,7 +7,7 @@
     ".": "./src/app.tsx"
   },
   "dependencies": {
-    "@agent-hub/core": "workspace:*",
+    "@collie/core": "workspace:*",
     "ink": "^6.0.0",
     "ink-text-input": "^6.0.0",
     "react": "^19.0.0"

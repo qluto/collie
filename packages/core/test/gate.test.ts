@@ -69,23 +69,23 @@ esac
 `,
       { mode: 0o755 },
     );
-    process.env.AGENT_HUB_CCUSAGE_BIN = script;
+    process.env.COLLIE_CCUSAGE_BIN = script;
     clearUsageCache();
     const u = getUsage();
     expect(u.ok).toBe(true);
     expect(u.blockUsedTokens).toBe(12_345_678);
     expect(u.weekUsedTokens).toBe(150_000_000);
     expect(u.blockEndsAt).toBe("2026-08-08T10:00:00.000Z");
-    delete process.env.AGENT_HUB_CCUSAGE_BIN;
+    delete process.env.COLLIE_CCUSAGE_BIN;
     clearUsageCache();
   });
 
   test("failure yields ok=false snapshot", () => {
-    process.env.AGENT_HUB_CCUSAGE_BIN = "/nonexistent/ccusage";
+    process.env.COLLIE_CCUSAGE_BIN = "/nonexistent/ccusage";
     clearUsageCache();
     const u = getUsage();
     expect(u.ok).toBe(false);
-    delete process.env.AGENT_HUB_CCUSAGE_BIN;
+    delete process.env.COLLIE_CCUSAGE_BIN;
     clearUsageCache();
   });
 });

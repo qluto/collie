@@ -3,10 +3,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { parseArgs } from "node:util";
 import { execFileSync } from "node:child_process";
-import { ensureDataDirs } from "@agent-hub/core";
+import { ensureDataDirs } from "@collie/core";
 import { dispatcherStatus, runDispatcher } from "../dispatcher/loop.ts";
 
-const LABEL = "com.qluto.agent-hub.dispatcher";
+const LABEL = "com.qluto.collie.dispatcher";
 
 function plistDest(): string {
   return path.join(os.homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
@@ -39,7 +39,7 @@ function installLaunchd(): number {
   launchctl(["bootstrap", domain, plistDest()]);
   console.log(`installed + started ${LABEL}`);
   console.log(`  plist: ${plistDest()}`);
-  console.log(`  logs:  tail -f ~/.agent-hub/logs/dispatcher.log`);
+  console.log(`  logs:  tail -f ~/.collie/logs/dispatcher.log`);
   return 0;
 }
 
@@ -70,7 +70,7 @@ export async function runDispatcherCommand(argv: string[]): Promise<number> {
     case "uninstall":
       return uninstallLaunchd();
     default:
-      console.error(`usage: agent-hub dispatcher run [--once] [--verbose] | status | install | uninstall`);
+      console.error(`usage: collie dispatcher run [--once] [--verbose] | status | install | uninstall`);
       return 2;
   }
 }

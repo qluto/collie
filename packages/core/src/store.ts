@@ -137,7 +137,7 @@ export function createTask(input: NewTaskInput, opts?: { source?: string }): Tas
     rev: 0,
     prompt: input.prompt,
   };
-  if (task.worktree) task.branch = `agent-hub/${task.id}`;
+  if (task.worktree) task.branch = `collie/${task.id}`;
   return withLock(() => {
     if (readTask(task.id)) throw new StoreError(`task id collision: ${task.id}`);
     writeTaskFile(task);

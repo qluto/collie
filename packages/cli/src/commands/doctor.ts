@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as net from "node:net";
 import { spawnSync } from "node:child_process";
-import { ConfigError, ensureDataDirs, hubHome, loadConfig } from "@agent-hub/core";
+import { ConfigError, ensureDataDirs, hubHome, loadConfig } from "@collie/core";
 
 function check(label: string, ok: boolean, detail?: string): boolean {
   console.log(`${ok ? "ok " : "FAIL"}  ${label}${detail ? ` — ${detail}` : ""}`);

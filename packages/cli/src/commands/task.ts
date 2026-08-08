@@ -7,10 +7,10 @@ import {
   cancelTask, createTask, getTask, listTasks, transition, updateTask,
   expandTilde,
   type Task, type TaskSize, type TaskStatus, type PermissionMode,
-} from "@agent-hub/core";
+} from "@collie/core";
 
 function die(msg: string): never {
-  console.error(`agent-hub: ${msg}`);
+  console.error(`collie: ${msg}`);
   process.exit(1);
 }
 
@@ -23,7 +23,7 @@ function requireTask(id: string | undefined): Task {
 
 function editorPrompt(initial: string): string {
   const editor = process.env.EDITOR ?? "vi";
-  const tmp = path.join(os.tmpdir(), `agent-hub-prompt-${process.pid}.md`);
+  const tmp = path.join(os.tmpdir(), `collie-prompt-${process.pid}.md`);
   fs.writeFileSync(tmp, initial);
   const res = spawnSync(editor, [tmp], { stdio: "inherit" });
   if (res.status !== 0) die(`$EDITOR (${editor}) exited with ${res.status}`);
@@ -155,6 +155,6 @@ export function runTaskCommand(argv: string[]): number {
       return 0;
     }
     default:
-      die(`unknown task subcommand "${sub ?? ""}" (see agent-hub --help)`);
+      die(`unknown task subcommand "${sub ?? ""}" (see collie --help)`);
   }
 }

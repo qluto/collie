@@ -1,7 +1,7 @@
 import {
   blockedUntil, getUsage, listTasks, quotaAllows, resolveMode, sizeFits,
-} from "@agent-hub/core";
-import type { ScheduleMode, Task } from "@agent-hub/core";
+} from "@collie/core";
+import type { ScheduleMode, Task } from "@collie/core";
 import type { DispatcherCtx } from "./ctx.ts";
 
 export interface TickPlan {
