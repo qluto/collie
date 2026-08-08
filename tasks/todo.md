@@ -30,15 +30,38 @@ Design doc: /Users/qluto/.claude/plans/expressive-bubbling-avalanche-agent-ahub-
   KeepAlive restart; same-ms task creation needed a stable sort tie-breaker
 
 ## Phase 3 — Ink TUI
-- [ ] board / detail / new-task / dashboard / config views
-- [ ] $EDITOR suspend/resume, fs.watch + poll refresh
-- [ ] ink-testing-library tests; bun raw-mode check
+- [x] board / detail / new-task / dashboard / config views
+- [x] $EDITOR suspend/resume, fs.watch + poll refresh
+- [x] ink-testing-library tests; bun raw-mode verified live in a Herdr pane
+      (node fallback not needed)
 
 ## Phase 4 — Worktrees + polish
-- [ ] worktree.create + reuse-on-retry
-- [ ] Notification hook blocked flow, post-tool-use heartbeat
-- [ ] pane.report_agent / report_metadata sidebar integration, notifications
-- [ ] README (JA quickstart + EN docs)
+- [x] worktree.create + reuse-on-retry (worktree.open → agents-scan fallback);
+      verified E2E: task ran on its own branch, main untouched
+- [x] Notification hook blocked flow (+ herdr notification), post-tool-use
+      throttled heartbeat
+- [x] Sidebar integration via pane.report_metadata ONLY (report_agent would
+      feed back into our own status reads)
+- [x] README (JA quickstart + EN docs)
 
 ## Review
-(fill after each phase)
+
+All four phases landed and E2E-verified against live Herdr + real claude
+sessions. Real-environment lessons that changed the design:
+1. claude's folder-trust dialog reads as blocked/unknown → auto-confirm during
+   ready-wait; readiness requires a live `idle` from agent.get (boot spinner
+   briefly reads as "working" via cached events).
+2. agent.start names are unique per server → task id doubles as the name.
+3. Requeue must clear run.paneId or the candidate filter (adoption guard)
+   starves the task forever.
+4. SIGTERM must interrupt the tick sleep AND exit non-zero, or launchd
+   KeepAlive won't restart after an accidental kill.
+5. Wire enums are snake_case (recent_unwrapped); pane.run doesn't exist on the
+   wire; pane.read wraps hard → whitespace-normalized echo verification.
+Deliberate deviation from the design doc: sidebar reporting uses
+report_metadata only (see Phase 4 note); completion callback is pre-allowed in
+generated settings.json permissions so it never blocks at 3am.
+
+The launchd dispatcher (com.qluto.agent-hub.dispatcher) is installed and
+running against the real ~/.agent-hub with the default config (00:00–07:00
+full throttle). Queue is empty until real tasks are added.

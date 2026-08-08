@@ -1,6 +1,6 @@
 import { detectLimitHit, getUsage, listTasks, readQuotaState, transition, writeQuotaState } from "@agent-hub/core";
 import { log, untrackPane, type DispatcherCtx } from "./ctx.ts";
-import { extractText, requeueOrFail } from "./dispatch.ts";
+import { extractText, reportStatus, requeueOrFail } from "./dispatch.ts";
 
 /**
  * Route wedged work to a human, every tick:
@@ -42,6 +42,7 @@ export async function watchdog(ctx: DispatcherCtx): Promise<void> {
     if (!idleTimedOut) continue;
 
     transition(task.id, "review", undefined, { source: "watchdog" });
+    if (paneId) await reportStatus(ctx, task.id, paneId, `agent-hub ⚠ needs review: ${task.title}`);
     untrackPane(ctx, task.id);
     log(ctx, `task ${task.id} idle ${Math.round((now - lastActivity) / 60000)}min without completion -> review`);
     try {

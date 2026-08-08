@@ -17,7 +17,7 @@ export function settingsPath(taskId: string): string {
   return path.join(runsDir(taskId), "settings.json");
 }
 
-const HOOK_EVENTS = ["SessionStart", "Stop", "Notification", "SessionEnd"] as const;
+const HOOK_EVENTS = ["SessionStart", "Stop", "Notification", "PostToolUse", "SessionEnd"] as const;
 
 export function writeRunArtifacts(task: Task): void {
   fs.mkdirSync(runsDir(task.id), { recursive: true });

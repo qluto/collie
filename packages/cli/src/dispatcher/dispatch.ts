@@ -1,3 +1,4 @@
+import * as path from "node:path";
 import { getTask, transition, updateTask } from "@agent-hub/core";
 import type { HerdrAgentInfo, Task } from "@agent-hub/core";
 import { log, trackPane, untrackPane, type DispatcherCtx } from "./ctx.ts";
@@ -56,6 +57,49 @@ export function requeueOrFail(ctx: DispatcherCtx, taskId: string, reason: string
   }
 }
 
+interface WorktreeResult {
+  path: string;
+  workspaceId: string;
+}
+
+/**
+ * Create (or reopen after a retry) the task's git worktree via Herdr so it
+ * shows up as a first-class workspace in the sidebar. worktree.create
+ * response includes the new workspace + root pane (verified 0.7.1).
+ */
+async function ensureWorktree(ctx: DispatcherCtx, task: Task): Promise<WorktreeResult | { error: string }> {
+  const wtPath = path.join(
+    ctx.config.defaults.worktreeRoot,
+    path.basename(task.repo),
+    task.id,
+  );
+  const branch = task.branch ?? `agent-hub/${task.id}`;
+  type WtResponse = { workspace?: { workspace_id?: string }; worktree?: { path?: string } };
+  try {
+    const res = await ctx.herdr.request<WtResponse>("worktree.create", {
+      cwd: task.repo, branch, path: wtPath, label: task.id, focus: false,
+    });
+    if (res.workspace?.workspace_id) {
+      return { path: res.worktree?.path ?? wtPath, workspaceId: res.workspace.workspace_id };
+    }
+    return { error: `worktree.create returned no workspace: ${JSON.stringify(res).slice(0, 120)}` };
+  } catch (createErr) {
+    // Branch/path may exist from a previous attempt — reopen it.
+    try {
+      const res = await ctx.herdr.request<WtResponse>("worktree.open", {
+        cwd: task.repo, path: wtPath, label: task.id, focus: false,
+      });
+      if (res.workspace?.workspace_id) return { path: wtPath, workspaceId: res.workspace.workspace_id };
+    } catch {
+      // fall through to the workspace scan below
+    }
+    // Already open as a workspace? Find the pane whose cwd is the worktree.
+    const existing = ctx.agents.find((a) => a.cwd === wtPath);
+    if (existing) return { path: wtPath, workspaceId: existing.workspace_id };
+    return { error: `worktree: ${(createErr as Error).message}` };
+  }
+}
+
 /**
  * Spawn a pane for the task, inject the pointer prompt, mark running.
  * The task stays `queued` until the very last step so a crash mid-dispatch
@@ -66,8 +110,20 @@ export async function dispatchTask(ctx: DispatcherCtx, task: Task): Promise<void
   log(ctx, `dispatching ${task.id} "${task.title}" -> ${task.repo}`);
   writeRunArtifacts(task);
 
-  const cwd = task.run?.worktreePath ?? task.repo; // worktree creation lands in Phase 4
-  const workspaceId = await resolveWorkspace(ctx, cwd);
+  let cwd = task.repo;
+  let workspaceId: string | undefined;
+  if (task.worktree) {
+    const wt = await ensureWorktree(ctx, task);
+    if ("error" in wt) {
+      requeueOrFail(ctx, task.id, wt.error);
+      return;
+    }
+    cwd = wt.path;
+    workspaceId = wt.workspaceId;
+    log(ctx, `task ${task.id}: worktree ${cwd} (workspace ${workspaceId})`);
+  } else {
+    workspaceId = await resolveWorkspace(ctx, cwd);
+  }
 
   let paneId: string;
   let tabId: string | undefined;
@@ -168,10 +224,35 @@ export async function dispatchTask(ctx: DispatcherCtx, task: Task): Promise<void
   transition(
     task.id,
     "running",
-    { paneId, tabId, workspaceId },
+    { paneId, tabId, workspaceId, ...(task.worktree ? { worktreePath: cwd } : {}) },
     { source: "dispatcher" },
   );
+  await reportStatus(ctx, task.id, paneId, `agent-hub ▶ ${task.title}`);
   log(ctx, `task ${task.id} running in pane ${paneId}`);
+}
+
+/**
+ * Push a status line into Herdr's sidebar for the pane. Deliberately uses only
+ * pane.report_metadata (display channel), never pane.report_agent: reporting a
+ * semantic state would feed back into the agent_status we ourselves read for
+ * scheduling decisions.
+ */
+export async function reportStatus(ctx: DispatcherCtx, taskId: string, paneId: string, text: string): Promise<void> {
+  try {
+    const fresh = getTask(taskId);
+    const seq = (fresh?.run?.reportSeq ?? 0) + 1;
+    updateTask(taskId, (t) => {
+      t.run = { ...t.run, reportSeq: seq };
+    });
+    await ctx.herdr.request("pane.report_metadata", {
+      pane_id: paneId,
+      source: "agent-hub",
+      custom_status: text,
+      seq,
+    });
+  } catch {
+    // sidebar decoration is best-effort
+  }
 }
 
 /** pane.read result shape (verified 0.7.1): { type: "pane_read", read: { text } } */

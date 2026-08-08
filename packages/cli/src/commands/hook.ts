@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { getTask, logsDir, transition, updateTask } from "@agent-hub/core";
+import { HerdrClient, getTask, logsDir, transition, updateTask } from "@agent-hub/core";
 
 /**
  * Claude Code hook entrypoints. Contract: NEVER block or fail the session —
@@ -70,6 +70,30 @@ export async function runHookCommand(argv: string[]): Promise<number> {
         if (task.status === "running") {
           transition(taskId, "blocked", undefined, { source: "hook-notification" });
           hlog(`notification: ${taskId} -> blocked`);
+          // surface it: unattended tasks waiting on permission need a human
+          const socketPath = process.env.HERDR_SOCKET_PATH;
+          if (socketPath) {
+            try {
+              await new HerdrClient(socketPath).request(
+                "notification.show",
+                { title: "agent-hub", body: `${taskId} is waiting for input/permission`, sound: "request" },
+                { timeoutMs: 2000 },
+              );
+            } catch {
+              // best-effort
+            }
+          }
+        }
+        break;
+      }
+      case "post-tool-use": {
+        // throttled heartbeat: at most one lock-cycle per minute
+        const last = Date.parse(task.run?.lastHeartbeatAt ?? "") || 0;
+        if (Date.now() - last > 60_000) {
+          updateTask(taskId, (t) => {
+            t.run = { ...t.run, lastHeartbeatAt: now };
+            delete t.run.idleSince;
+          });
         }
         break;
       }
