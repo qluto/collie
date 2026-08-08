@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 import { runTaskCommand } from "./commands/task.ts";
 import { runDoctor } from "./commands/doctor.ts";
+import { runHookCommand } from "./commands/hook.ts";
+import { runDispatcherCommand } from "./commands/dispatcher.ts";
 
 const USAGE = `agent-hub — task queue for Claude Code sessions on Herdr
 
@@ -10,7 +12,7 @@ Usage:
                      [--prompt <text>]           (omit --prompt to open $EDITOR)
   agent-hub task list [--status s1,s2] [--json]
   agent-hub task show <id>
-  agent-hub task queue|backlog|retry|cancel <id>
+  agent-hub task queue|backlog|retry|cancel|done <id>
   agent-hub task complete <id> --summary "<text>"
   agent-hub task fail <id> --reason "<text>" [--retryable]
   agent-hub doctor
@@ -24,9 +26,11 @@ async function main(argv: string[]): Promise<number> {
     case "doctor":
       return runDoctor();
     case "dispatcher":
+      return runDispatcherCommand(rest);
     case "hook":
+      return runHookCommand(rest);
     case "tui": {
-      // Wired in later phases; keep exit codes stable for scripts.
+      // Wired in Phase 3.
       console.error(`agent-hub ${group}: not implemented yet`);
       return 2;
     }

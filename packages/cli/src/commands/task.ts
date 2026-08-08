@@ -112,6 +112,11 @@ export function runTaskCommand(argv: string[]): number {
       console.log(`${next.id} -> queued (attempt ${next.attempts}/${next.maxAttempts})`);
       return 0;
     }
+    case "done": {
+      const t = transition(requireTask(rest[0]).id, "done", undefined, { source: "cli" });
+      console.log(`${t.id} -> done`);
+      return 0;
+    }
     case "cancel": {
       const t = cancelTask(requireTask(rest[0]).id, { source: "cli" });
       console.log(`${t.id} -> ${t.status}`);

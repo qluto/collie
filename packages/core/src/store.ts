@@ -17,9 +17,9 @@ export class IllegalTransitionError extends StoreError {
 
 const LEGAL_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   backlog: ["queued"],
-  queued: ["backlog", "running"],
+  queued: ["backlog", "running", "failed"], // queued→failed: spawn attempts exhausted
   running: ["blocked", "review", "failed", "queued"],
-  blocked: ["running", "review", "failed"],
+  blocked: ["running", "review", "failed", "queued"], // blocked→queued: pane died while blocked
   review: ["done", "queued"],
   done: [],
   failed: ["queued"],
@@ -177,7 +177,10 @@ export function transition(
     if (to === "done" || to === "failed") task.endedAt = now;
     if (patch) {
       task.run = { ...task.run, ...patch };
-      if (patch.failureReason !== undefined) task.run.failureReason = patch.failureReason;
+      // explicit undefined in a patch clears the field (e.g. paneId on requeue)
+      for (const key of Object.keys(task.run) as Array<keyof typeof task.run>) {
+        if (task.run[key] === undefined) delete task.run[key];
+      }
     }
     writeTaskFile(task);
     appendEvent({
