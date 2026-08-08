@@ -1,12 +1,13 @@
 import * as fs from "node:fs";
 import {
-  dispatcherStatePath, ensureDataDirs, listTasks, loadConfig,
-  type DispatcherState, type Task,
+  ConfigError, dispatcherStatePath, ensureDataDirs, listTasks, loadConfig,
+  type DispatcherState, type ScheduleMode,
 } from "@agent-hub/core";
 import { createCtx, log, vlog, type DispatcherCtx } from "./ctx.ts";
 import { dispatchTask } from "./dispatch.ts";
 import { reconcile } from "./reconcile.ts";
 import { watchdog } from "./watchdog.ts";
+import { planTick } from "./gates.ts";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -29,45 +30,42 @@ function pidAlive(pid: number): boolean {
   }
 }
 
-function writeState(ctx: DispatcherCtx, wip: number): void {
+function writeState(ctx: DispatcherCtx, wip: number, mode: ScheduleMode | "degraded"): void {
   const state: DispatcherState = {
     pid: process.pid,
     startedAt: ctx.startedAt,
     lastTickAt: new Date().toISOString(),
-    mode: ctx.degraded ? "degraded" : "full", // schedule modes land in Phase 2
+    mode,
     wip,
     lastDecision: ctx.lastDecision,
   };
   fs.writeFileSync(dispatcherStatePath(), JSON.stringify(state, null, 2));
 }
 
-/** Phase 1 gate: WIP limit only. Schedule/quota gates arrive in Phase 2. */
-function pickCandidate(ctx: DispatcherCtx): { task?: Task; decision: string } {
-  const wipTasks = listTasks({ status: ["running", "blocked"] });
-  const wip = wipTasks.length;
-  if (wip >= ctx.config.dispatch.wipLimit) {
-    return { decision: `wip full (${wip}/${ctx.config.dispatch.wipLimit})` };
-  }
-  const queued = listTasks({ status: ["queued"] }).filter((t) => !t.run?.paneId);
-  const task = queued[0];
-  if (!task) return { decision: `queue empty (wip ${wip}/${ctx.config.dispatch.wipLimit})` };
-  return { task, decision: `dispatching ${task.id}` };
-}
-
 export async function tick(ctx: DispatcherCtx): Promise<void> {
+  // Config edits (TUI/editor) apply on the next tick without a restart.
+  try {
+    ctx.config = loadConfig();
+  } catch (err) {
+    if (err instanceof ConfigError) log(ctx, `config invalid, keeping previous: ${err.message}`);
+    else throw err;
+  }
+
   await reconcile(ctx);
   await watchdog(ctx);
 
+  let mode: ScheduleMode | "degraded" = "degraded";
   if (ctx.degraded) {
     ctx.lastDecision = "degraded: herdr socket unreachable";
   } else {
-    const { task, decision } = pickCandidate(ctx);
-    ctx.lastDecision = decision;
-    if (task) await dispatchTask(ctx, task);
+    const plan = planTick(ctx);
+    mode = plan.mode;
+    ctx.lastDecision = plan.decision;
+    if (plan.task) await dispatchTask(ctx, plan.task);
   }
 
   const wip = listTasks({ status: ["running", "blocked"] }).length;
-  writeState(ctx, wip);
+  writeState(ctx, wip, mode);
   vlog(ctx, `tick: ${ctx.lastDecision} (wip ${wip})`);
 }
 
@@ -85,9 +83,11 @@ export async function runDispatcher(opts: { once?: boolean; verbose?: boolean })
   log(ctx, `dispatcher started (pid ${process.pid}, poll ${config.dispatch.pollIntervalSec}s, wip ${config.dispatch.wipLimit})`);
 
   let stopping = false;
+  let wakeUp: (() => void) | undefined;
   const stop = () => {
     stopping = true;
     log(ctx, "dispatcher stopping");
+    wakeUp?.(); // interrupt the inter-tick sleep for a prompt exit
   };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
@@ -98,11 +98,20 @@ export async function runDispatcher(opts: { once?: boolean; verbose?: boolean })
     } catch (err) {
       log(ctx, `tick error: ${(err as Error).stack ?? err}`);
     }
-    if (!opts.once && !stopping) await sleep(config.dispatch.pollIntervalSec * 1000);
+    if (!opts.once && !stopping) {
+      await new Promise<void>((resolve) => {
+        wakeUp = resolve;
+        setTimeout(resolve, ctx.config.dispatch.pollIntervalSec * 1000);
+      });
+      wakeUp = undefined;
+    }
   } while (!opts.once && !stopping);
 
   for (const [taskId] of ctx.panes) ctx.panes.get(taskId)?.sub?.close();
-  return 0;
+  // Signal-initiated stop exits non-zero so launchd's KeepAlive
+  // (SuccessfulExit=false) restarts us after an accidental kill; launchctl
+  // bootout unloads regardless of exit code, so uninstall still sticks.
+  return stopping ? 1 : 0;
 }
 
 export function dispatcherStatus(): number {

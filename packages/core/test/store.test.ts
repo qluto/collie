@@ -55,6 +55,14 @@ describe("store basics", () => {
     const a = createTask({ title: "a", repo: "/tmp", prompt: "p", priority: 200, status: "queued" });
     const b = createTask({ title: "b", repo: "/tmp", prompt: "p", priority: 10, status: "queued" });
     const c = createTask({ title: "c", repo: "/tmp", prompt: "p", priority: 10, status: "queued" });
+    // same-priority order is by queuedAt; same-ms creation makes it ambiguous,
+    // so set explicit timestamps
+    updateTask(b.id, (t) => {
+      t.queuedAt = "2026-08-08T00:00:01.000Z";
+    });
+    updateTask(c.id, (t) => {
+      t.queuedAt = "2026-08-08T00:00:02.000Z";
+    });
     const ids = listTasks({ status: ["queued"] }).map((t) => t.id);
     expect(ids[0]).toBe(b.id);
     expect(ids[1]).toBe(c.id);

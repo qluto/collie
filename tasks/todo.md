@@ -11,10 +11,15 @@ Design doc: /Users/qluto/.claude/plans/expressive-bubbling-avalanche-agent-ahub-
 - [x] bun link → `agent-hub` bin
 
 ## Phase 1 — MVP end-to-end loop
-- [ ] herdr client (request one-shot, subscribe long-lived) + fake-socket tests
-- [ ] dispatcher loop (WIP gate only), dispatch sequence, reconcile, idle watchdog
-- [ ] hooks: session-start / stop / session-end
-- [ ] E2E: sandbox repo HELLO.md task → review; kill-dispatcher / kill-pane recovery
+- [x] herdr client (request one-shot, subscribe long-lived) + fake-socket tests (6 pass)
+- [x] dispatcher loop (WIP gate only), dispatch sequence, reconcile, idle watchdog
+- [x] hooks: session-start / stop / notification / session-end
+- [x] E2E: HELLO.md task queued→running→blocked→review, commit landed; completion
+      arrived while dispatcher was dead (hook-only path); kill-pane → SessionEnd
+      requeue → unattended re-run to review
+- Field findings: folder-trust dialog auto-confirm needed; agent.start name must
+  be unique (task id used); pane.read wire format is recent_unwrapped; boot
+  spinner briefly reads as "working" (ready check uses live agent.get, idle only)
 
 ## Phase 2 — Quota + schedule + limits + launchd
 - [ ] ccusage wrapper (cache, env override), gate math, schedule windows

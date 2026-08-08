@@ -94,7 +94,12 @@ export function listTasks(filter?: { status?: TaskStatus[] }): Task[] {
     }
   }
   const filtered = filter?.status ? tasks.filter((t) => filter.status!.includes(t.status)) : tasks;
-  return filtered.sort((a, b) => a.priority - b.priority || (a.queuedAt ?? a.createdAt).localeCompare(b.queuedAt ?? b.createdAt));
+  return filtered.sort(
+    (a, b) =>
+      a.priority - b.priority ||
+      (a.queuedAt ?? a.createdAt).localeCompare(b.queuedAt ?? b.createdAt) ||
+      a.id.localeCompare(b.id), // stable final tie-breaker
+  );
 }
 
 export function getTask(id: string): Task | null {
