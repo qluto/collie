@@ -30,10 +30,11 @@ export function readSnapshot(): HubSnapshot {
 }
 
 /** Live snapshot: fs.watch on the tasks dir + 2s poll fallback (macOS fs.watch is flaky). */
-export function useHubSnapshot(): [HubSnapshot, () => void] {
+export function useHubSnapshot(paused = false): [HubSnapshot, () => void] {
   const [snap, setSnap] = useState<HubSnapshot>(readSnapshot);
   const refresh = () => setSnap(readSnapshot());
   useEffect(() => {
+    if (paused) return; // e.g. while a text field owns the hardware cursor
     const interval = setInterval(refresh, 2000);
     let watcher: fs.FSWatcher | undefined;
     try {
@@ -54,6 +55,6 @@ export function useHubSnapshot(): [HubSnapshot, () => void] {
       watcher?.close();
       hubWatcher?.close();
     };
-  }, []);
+  }, [paused]);
   return [snap, refresh];
 }

@@ -9,7 +9,6 @@
   "dependencies": {
     "@collie/core": "workspace:*",
     "ink": "^6.0.0",
-    "ink-text-input": "^6.0.0",
     "react": "^19.0.0"
   },
   "devDependencies": {

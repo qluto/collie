@@ -1,9 +1,16 @@
 import React, { useMemo, useState } from "react";
 import { Box, Text, useInput } from "ink";
-import TextInput from "ink-text-input";
 import type { PermissionMode, TaskSize } from "@collie/core";
+import { JpTextInput } from "../jpTextInput.tsx";
 
 const MAX_VISIBLE_CANDIDATES = 8;
+
+// Fixed overlay geometry (1-indexed screen cells) for hardware-cursor
+// placement: row 1 header, row 2 box border, row 3 "New task", row 4 repo,
+// row 5 title; the value starts after "│ " (2 cells) + a 12-cell label.
+const INPUT_COL = 15;
+const REPO_ROW = 4;
+const TITLE_ROW = 5;
 
 export interface NewTaskDraft {
   repo: string;
@@ -101,13 +108,15 @@ export function NewTaskForm(props: {
         <Box>
           <Text dimColor>{"repo:       "}</Text>
           {step === 0 ? (
-            <TextInput
+            <JpTextInput
               value={repo}
               onChange={(v) => {
                 setRepo(v);
                 setRepoSel(0); // retarget the top hit as the filter narrows
               }}
               onSubmit={confirmRepo}
+              row={REPO_ROW}
+              col={INPUT_COL}
             />
           ) : (
             <Text>{repo}</Text>
@@ -131,7 +140,13 @@ export function NewTaskForm(props: {
         <Box>
           <Text dimColor>{"title:      "}</Text>
           {step === 1 ? (
-            <TextInput value={title} onChange={setTitle} onSubmit={() => title.trim() && setStep(2)} />
+            <JpTextInput
+              value={title}
+              onChange={setTitle}
+              onSubmit={() => title.trim() && setStep(2)}
+              row={TITLE_ROW}
+              col={INPUT_COL}
+            />
           ) : (
             <Text>{title}</Text>
           )}

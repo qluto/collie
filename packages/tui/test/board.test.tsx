@@ -74,3 +74,13 @@ describe("Board", () => {
     }
   });
 });
+
+describe("displayWidth", () => {
+  test("ascii=1, CJK=2, mixed", async () => {
+    const { displayWidth } = await import("../src/cursor.ts");
+    expect(displayWidth("abc")).toBe(3);
+    expect(displayWidth("認証フロー")).toBe(10);
+    expect(displayWidth("fix 認証")).toBe(8);
+    expect(displayWidth("")).toBe(0);
+  });
+});

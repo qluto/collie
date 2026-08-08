@@ -26,9 +26,10 @@ type Overlay =
 
 function App(): React.JSX.Element {
   const { exit } = useApp();
-  const [snap, refresh] = useHubSnapshot();
   const [tab, setTab] = useState<Tab>("board");
   const [overlay, setOverlay] = useState<Overlay>({ kind: "none" });
+  // pause background refresh while the new-task form owns the hardware cursor
+  const [snap, refresh] = useHubSnapshot(overlay.kind === "new");
   const [focusCol, setFocusCol] = useState(1); // start on Queued
   const [focusRow, setFocusRow] = useState(0);
   const [showFailed, setShowFailed] = useState(false);
@@ -198,7 +199,11 @@ function App(): React.JSX.Element {
           </Text>
         ))}
         <Text dimColor>? help</Text>
-        {flash && <Text color="yellow">{flash}</Text>}
+        {flash && (
+          <Text color="yellow" wrap="truncate">
+            {flash}
+          </Text>
+        )}
       </Box>
       {overlay.kind === "new" ? (
         <NewTaskForm
