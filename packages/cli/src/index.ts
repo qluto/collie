@@ -30,9 +30,10 @@ async function main(argv: string[]): Promise<number> {
     case "hook":
       return runHookCommand(rest);
     case "tui": {
-      // Wired in Phase 3.
-      console.error(`agent-hub ${group}: not implemented yet`);
-      return 2;
+      // Lazy import keeps ink/react out of dispatcher and hook processes.
+      const { runTui } = await import("@agent-hub/tui");
+      runTui();
+      return new Promise<number>(() => {}); // ink owns the process from here
     }
     case undefined:
     case "help":

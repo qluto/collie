@@ -22,10 +22,12 @@ Design doc: /Users/qluto/.claude/plans/expressive-bubbling-avalanche-agent-ahub-
   spinner briefly reads as "working" (ready check uses live agent.get, idle only)
 
 ## Phase 2 — Quota + schedule + limits + launchd
-- [ ] ccusage wrapper (cache, env override), gate math, schedule windows
-- [ ] limit-string scraper → blockedUntil
-- [ ] dispatcher install/uninstall (launchd)
-- [ ] Unit tests: gate, windows (midnight-crossing), reset parser
+- [x] ccusage wrapper (cache, env override), gate math, schedule windows
+- [x] limit-string scraper → blockedUntil (+learned ceiling, attempt-free requeue)
+- [x] dispatcher install/uninstall (launchd) — installed, KeepAlive verified
+- [x] Unit tests: gate, windows (midnight-crossing), reset parser — 40 total
+- Field findings: SIGTERM must interrupt inter-tick sleep + exit non-zero for
+  KeepAlive restart; same-ms task creation needed a stable sort tie-breaker
 
 ## Phase 3 — Ink TUI
 - [ ] board / detail / new-task / dashboard / config views

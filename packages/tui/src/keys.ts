@@ -1,0 +1,20 @@
+/** Single source of truth for keybindings; the help overlay renders this. */
+export const KEYMAP: Array<{ keys: string; action: string; context: string }> = [
+  { keys: "1 / 2 / 3", action: "Board / Dashboard / Config tab", context: "global" },
+  { keys: "?", action: "toggle help", context: "global" },
+  { keys: "q", action: "quit", context: "global" },
+  { keys: "R", action: "force refresh", context: "global" },
+  { keys: "h l / ← →", action: "focus column", context: "board" },
+  { keys: "j k / ↓ ↑", action: "focus card", context: "board" },
+  { keys: "Enter", action: "task detail", context: "board" },
+  { keys: "n", action: "new task", context: "board" },
+  { keys: "e", action: "edit prompt in $EDITOR (backlog/queued)", context: "board" },
+  { keys: "space", action: "toggle backlog <-> queued", context: "board" },
+  { keys: "J K", action: "priority reorder (queued)", context: "board" },
+  { keys: "d", action: "promote review -> done", context: "board" },
+  { keys: "r", action: "requeue (review/failed)", context: "board" },
+  { keys: "x", action: "cancel task (confirm)", context: "board" },
+  { keys: "f", action: "toggle done/failed column", context: "board" },
+  { keys: "e", action: "edit config.toml in $EDITOR", context: "config" },
+  { keys: "Esc", action: "back / dismiss", context: "detail/dialogs" },
+];

@@ -1,0 +1,19 @@
+{
+  "name": "@agent-hub/tui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/app.tsx"
+  },
+  "dependencies": {
+    "@agent-hub/core": "workspace:*",
+    "ink": "^6.0.0",
+    "ink-text-input": "^6.0.0",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "ink-testing-library": "^4.0.0"
+  }
+}

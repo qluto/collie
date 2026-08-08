@@ -7,6 +7,7 @@
     "agent-hub": "./src/index.ts"
   },
   "dependencies": {
-    "@agent-hub/core": "workspace:*"
+    "@agent-hub/core": "workspace:*",
+    "@agent-hub/tui": "workspace:*"
   }
 }
