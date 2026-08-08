@@ -5,7 +5,7 @@ import * as YAML from "yaml";
 import { taskFilePath, tasksDir, ensureDataDirs } from "./paths.ts";
 import { withLock } from "./lock.ts";
 import { appendEvent } from "./journal.ts";
-import { DEFAULT_CONFIG } from "./config.ts";
+import { DEFAULT_CONFIG, loadConfig } from "./config.ts";
 import type { NewTaskInput, Task, TaskRun, TaskStatus } from "./types.ts";
 
 export class StoreError extends Error {}
@@ -110,7 +110,14 @@ export function getTask(id: string): Task | null {
 export function createTask(input: NewTaskInput, opts?: { source?: string }): Task {
   ensureDataDirs();
   const now = new Date().toISOString();
-  const d = DEFAULT_CONFIG.defaults;
+  // user config supplies the defaults; fall back to built-ins if it's invalid
+  let config = DEFAULT_CONFIG;
+  try {
+    config = loadConfig();
+  } catch {
+    // keep built-in defaults
+  }
+  const d = config.defaults;
   const status = input.status ?? "backlog";
   const task: Task = {
     id: generateId(),
@@ -126,7 +133,7 @@ export function createTask(input: NewTaskInput, opts?: { source?: string }): Tas
     updatedAt: now,
     queuedAt: status === "queued" ? now : undefined,
     attempts: 0,
-    maxAttempts: input.maxAttempts ?? DEFAULT_CONFIG.dispatch.maxAttempts,
+    maxAttempts: input.maxAttempts ?? config.dispatch.maxAttempts,
     rev: 0,
     prompt: input.prompt,
   };
