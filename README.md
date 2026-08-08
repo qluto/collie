@@ -1,9 +1,9 @@
-# collie
+# collie 🐑🐑🐕
 
 Kanban-style task queue for Claude Code sessions, orchestrated through
-[Herdr](https://herdr.dev). Queue up coding tasks ahead of time; a dispatcher
-drains them into fresh Herdr panes whenever your token quota has headroom —
-preferring the night hours you configure.
+[Herdr](https://herdr.dev) — the herder's sheepdog. Queue up coding tasks
+ahead of time; a dispatcher drains them into fresh Herdr panes whenever your
+token quota has headroom — preferring the night hours you configure.
 
 ## クイックスタート（日本語）
 
@@ -76,6 +76,26 @@ Key design decisions, learned the hard way:
   resets 3:45pm`); the printed reset time becomes a hard dispatch stop
   (+ jitter) and the task requeues without burning an attempt.
 
+## TUI
+
+`collie tui` は vim/htop と同じ全画面（オルタネートスクリーン）で動き、終了時に
+元のシェル画面を復元します。日本語 IME に対応：変換中テキストは入力欄のカーソル
+位置にインライン表示され、複数文字の一括確定でも文字が欠けません。
+
+| キー | 動作 |
+|---|---|
+| `1` `2` `3` | Board / Dashboard / Config タブ |
+| `h l j k` / 矢印 | 列・カード移動 |
+| `n` | 新規タスク（repo は一覧から選択 or 自由入力 → $EDITOR でプロンプト） |
+| `space` | Backlog ↔ Queued |
+| `J` `K` | Queued 内の優先度並び替え |
+| `d` / `r` | Review→Done 昇格 / 再キュー |
+| `e` | プロンプト（または config）を $EDITOR で編集 |
+| `x` | キャンセル（確認あり。ペインは残す） |
+| `f` | Done ↔ Failed 列切替 |
+| `Enter` / `Esc` | 詳細表示 / 戻る |
+| `?` / `q` | ヘルプ / 終了 |
+
 ## CLI
 
 ```
@@ -89,10 +109,14 @@ collie hook <name>        # internal: called by claude hooks
 ## Development
 
 ```sh
-bun test          # 44 tests: store concurrency, herdr client (fake socket),
-                  # gate math, schedule windows, reset parser, TUI render
+bun test          # 50 tests: store concurrency, herdr client (fake socket),
+                  # gate math, schedule windows, reset parser, repo discovery,
+                  # TUI render + display width
 bunx tsc --noEmit
 ```
+
+Contributor notes (wire quirks, invariants, testing conventions) live in
+[CLAUDE.md](CLAUDE.md).
 
 Monorepo: `packages/core` (store, herdr client, quota), `packages/cli`
 (dispatcher, hooks, task commands), `packages/tui` (Ink kanban).
