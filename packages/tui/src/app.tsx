@@ -12,7 +12,9 @@ import { Detail } from "./views/detail.tsx";
 import { NewTaskForm, type NewTaskDraft } from "./views/newTask.tsx";
 import { ConfigView } from "./views/config.tsx";
 import { KEYMAP } from "./keys.ts";
-import { editFileInEditor, editInEditor } from "./editor.ts";
+import {
+  ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN, editFileInEditor, editInEditor, setRepaint,
+} from "./editor.ts";
 
 type Tab = "board" | "dashboard" | "config";
 type Overlay =
@@ -32,6 +34,16 @@ function App(): React.JSX.Element {
   const [showFailed, setShowFailed] = useState(false);
   const [usage, setUsage] = useState<UsageSnapshot | null>(null);
   const [flash, setFlash] = useState("");
+  const [rows, setRows] = useState(process.stdout.rows ?? 24);
+
+  // fill the terminal and follow resizes
+  useEffect(() => {
+    const onResize = () => setRows(process.stdout.rows ?? 24);
+    process.stdout.on("resize", onResize);
+    return () => {
+      process.stdout.off("resize", onResize);
+    };
+  }, []);
 
   // usage gauge refresh (ccusage subprocess, 60s core cache) — dashboard only
   useEffect(() => {
@@ -177,7 +189,7 @@ function App(): React.JSX.Element {
     overlay.kind === "detail" ? snap.tasks.find((t) => t.id === overlay.taskId) : undefined;
 
   return (
-    <Box flexDirection="column" flexGrow={1}>
+    <Box flexDirection="column" height={rows}>
       <Box gap={2}>
         <Text bold color="magenta">
           agent-hub
@@ -235,5 +247,15 @@ function App(): React.JSX.Element {
 }
 
 export function runTui(): void {
-  render(<App />, { exitOnCtrlC: true });
+  // Full-screen: take over the alternate screen buffer (like vim/htop) and
+  // give the shell back untouched on exit.
+  process.stdout.write(ENTER_ALT_SCREEN);
+  const instance = render(<App />, { exitOnCtrlC: true });
+  setRepaint(() => instance.clear());
+  const restore = () => process.stdout.write(LEAVE_ALT_SCREEN);
+  process.on("exit", restore);
+  void instance.waitUntilExit().then(() => {
+    restore();
+    process.exit(0);
+  });
 }

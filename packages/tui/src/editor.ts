@@ -3,6 +3,15 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 
+export const ENTER_ALT_SCREEN = "\x1b[?1049h\x1b[H";
+export const LEAVE_ALT_SCREEN = "\x1b[?1049l";
+
+/** Set by runTui so editor helpers can force a full Ink repaint after $EDITOR. */
+let repaint: (() => void) | undefined;
+export function setRepaint(fn: () => void): void {
+  repaint = fn;
+}
+
 /**
  * Suspend the Ink app's raw-mode terminal, run $EDITOR on a temp file seeded
  * with `initial`, and return the edited text (null when the editor failed).
@@ -22,6 +31,10 @@ export function editInEditor(initial: string, suffix = ".md"): string | null {
     return fs.readFileSync(tmp, "utf8");
   } finally {
     if (process.stdin.isTTY && wasRaw) process.stdin.setRawMode(true);
+    // full-screen editors toggle the alt screen themselves and drop us back to
+    // the main buffer on exit — re-enter ours and repaint from scratch
+    process.stdout.write(ENTER_ALT_SCREEN);
+    repaint?.();
     try {
       fs.unlinkSync(tmp);
     } catch {
@@ -40,5 +53,7 @@ export function editFileInEditor(filePath: string): boolean {
     return spawnSync(editor, [filePath], { stdio: "inherit" }).status === 0;
   } finally {
     if (process.stdin.isTTY && wasRaw) process.stdin.setRawMode(true);
+    process.stdout.write(ENTER_ALT_SCREEN);
+    repaint?.();
   }
 }
