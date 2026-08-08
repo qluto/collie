@@ -191,9 +191,7 @@ function App(): React.JSX.Element {
   return (
     <Box flexDirection="column" height={rows}>
       <Box gap={2}>
-        <Text bold color="magenta">
-          collie
-        </Text>
+        <Text>🐑🐑🐕</Text>
         {(["board", "dashboard", "config"] as Tab[]).map((t, i) => (
           <Text key={t} bold={tab === t} underline={tab === t} dimColor={tab !== t}>
             {`${i + 1}:${t}`}
