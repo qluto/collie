@@ -11,7 +11,7 @@ const USAGE = `collie — task queue for Claude Code sessions on Herdr
 Usage:
   collie task add --repo <path> --title <t> [--size S|M|L] [--priority N]
                      [--defer]                   (not urgent: full windows only)
-                     [--no-worktree] [--permission-mode <m>] [--queue]
+                     [--no-worktree] [--permission-mode <m>]
                      [--prompt <text>]           (omit --prompt to open $EDITOR)
   collie task list [--status s1,s2] [--json]
   collie task show <id>

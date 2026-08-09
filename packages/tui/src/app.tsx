@@ -206,16 +206,15 @@ function App(): React.JSX.Element {
       return;
     }
     act(() => {
+      // worktree/permissionMode come from config defaults inside createTask —
+      // a toss-in never answers them
       const t = createTask(
         {
           title: draft.title,
           repo: draft.repo,
           prompt,
           size: draft.size,
-          defer: draft.defer,
-          worktree: draft.worktree,
-          permissionMode: draft.permissionMode,
-          status: draft.queueNow ? "queued" : "backlog",
+          status: "queued",
         },
         { source: "tui" },
       );
@@ -411,7 +410,6 @@ function App(): React.JSX.Element {
         />
       ) : overlay.kind === "new" ? (
         <NewTaskForm
-          defaults={{ worktree: config.defaults.worktree, permissionMode: config.defaults.permissionMode }}
           knownRepos={(() => {
             let discovered: string[] = [];
             try {

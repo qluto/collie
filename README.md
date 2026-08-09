@@ -18,7 +18,7 @@ printf '#!/bin/sh\nexec %s %s "$@"\n' "$(which bun)" "$PWD/packages/cli/src/inde
 collie doctor
 
 # 3. タスクを積む（--prompt を省略すると $EDITOR が開く）
-collie task add --repo ~/dev/projects/myapp --title "flaky テストを直す" --queue
+collie task add --repo ~/dev/projects/myapp --title "flaky テストを直す"
 
 # 4. ディスパッチャを常駐させる（launchd）
 collie dispatcher install

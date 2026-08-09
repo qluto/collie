@@ -52,7 +52,6 @@ export function runTaskCommand(argv: string[]): number {
           defer: { type: "boolean", default: false },
           "no-worktree": { type: "boolean", default: false },
           "permission-mode": { type: "string" },
-          queue: { type: "boolean", default: false },
         },
       });
       if (!values.repo) die("--repo is required");
@@ -76,7 +75,8 @@ export function runTaskCommand(argv: string[]): number {
         defer: values.defer,
         worktree: values["no-worktree"] ? false : undefined,
         permissionMode: values["permission-mode"] as PermissionMode | undefined,
-        status: values.queue ? "queued" : "backlog",
+        // an added task is a queued task; createTask's own default is backlog
+        status: "queued",
       });
       console.log(`created ${task.id} (${task.status})`);
       return 0;

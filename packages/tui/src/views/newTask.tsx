@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Box, Text, useInput } from "ink";
-import type { PermissionMode, TaskSize } from "@collie/core";
+import type { TaskSize } from "@collie/core";
 import { JpTextInput } from "../jpTextInput.tsx";
 
 const MAX_VISIBLE_CANDIDATES = 8;
@@ -16,38 +16,28 @@ export interface NewTaskDraft {
   repo: string;
   title: string;
   size: TaskSize;
-  defer: boolean;
-  worktree: boolean;
-  permissionMode: PermissionMode;
-  queueNow: boolean;
 }
 
 const SIZES: TaskSize[] = ["S", "M", "L"];
-// Safest-first; `default` is omitted (legacy alias for `manual`).
-const PERMS: PermissionMode[] = ["auto", "acceptEdits", "plan", "manual", "dontAsk", "bypassPermissions"];
 
 /**
- * Field-by-field creation form. On submit the parent opens $EDITOR for the
- * prompt body and creates the task.
+ * Three-question capture: where, what, how big. Everything else (worktree,
+ * permission mode, priority) is a config default — a toss-in must cost under
+ * ten seconds. On submit the parent opens $EDITOR for the prompt body and
+ * creates the task, already queued.
  */
 export function NewTaskForm(props: {
-  defaults: { worktree: boolean; permissionMode: PermissionMode };
   /** discovered from config repos.roots + repos of recent tasks */
   knownRepos: string[];
   onSubmit: (draft: NewTaskDraft) => void;
   onCancel: () => void;
 }): React.JSX.Element {
-  // 0 repo, 1 title, 2 size, 3 defer, 4 worktree, 5 perm, 6 queueNow
+  // 0 repo, 1 title, 2 size
   const [step, setStep] = useState(0);
   const [repo, setRepo] = useState("");
   const [repoSel, setRepoSel] = useState(0); // index into candidates; -1 = free text
   const [title, setTitle] = useState("");
   const [sizeIdx, setSizeIdx] = useState(1);
-  const [defer, setDefer] = useState(false);
-  const [worktree, setWorktree] = useState(props.defaults.worktree);
-  // a config default of "default" (legacy alias) isn't in PERMS -> fall back to auto
-  const [permIdx, setPermIdx] = useState(Math.max(0, PERMS.indexOf(props.defaults.permissionMode)));
-  const [queueNow, setQueueNow] = useState(true);
 
   // typed text filters the known repos (case-insensitive substring on the
   // whole path); arrow keys move the highlight; free text stays possible
@@ -77,32 +67,14 @@ export function NewTaskForm(props: {
       // Enter is handled by TextInput.onSubmit -> confirmRepo
       return;
     }
-    const toggled = input === " " || input === "h" || input === "l" || key.leftArrow || key.rightArrow;
     if (step === 2) {
       if (key.leftArrow || input === "h") setSizeIdx((i) => Math.max(0, i - 1));
       if (key.rightArrow || input === "l") setSizeIdx((i) => Math.min(SIZES.length - 1, i + 1));
-      if (key.return) setStep(3);
-    } else if (step === 3) {
-      if (toggled) setDefer((d) => !d);
-      if (key.return) setStep(4);
-    } else if (step === 4) {
-      if (toggled) setWorktree((w) => !w);
-      if (key.return) setStep(5);
-    } else if (step === 5) {
-      if (key.leftArrow || input === "h") setPermIdx((i) => Math.max(0, i - 1));
-      if (key.rightArrow || input === "l") setPermIdx((i) => Math.min(PERMS.length - 1, i + 1));
-      if (key.return) setStep(6);
-    } else if (step === 6) {
-      if (toggled) setQueueNow((q) => !q);
       if (key.return) {
         props.onSubmit({
           repo: repo.trim(),
           title: title.trim(),
           size: SIZES[sizeIdx]!,
-          defer,
-          worktree,
-          permissionMode: PERMS[permIdx]!,
-          queueNow,
         });
       }
     }
@@ -165,32 +137,7 @@ export function NewTaskForm(props: {
       {step >= 2 && (
         <Text>
           <Text dimColor>{"size:       "}</Text>
-          {step === 2 ? choice(SIZES, sizeIdx) : SIZES[sizeIdx]}
-        </Text>
-      )}
-      {step >= 3 && (
-        <Text>
-          <Text dimColor>{"defer:      "}</Text>
-          {step === 3 ? choice(["no", "yes"], defer ? 1 : 0) : defer ? "yes" : "no"}
-          {step === 3 && <Text dimColor>{"  (yes = full windows only, i.e. nights)"}</Text>}
-        </Text>
-      )}
-      {step >= 4 && (
-        <Text>
-          <Text dimColor>{"worktree:   "}</Text>
-          {step === 4 ? choice(["on", "off"], worktree ? 0 : 1) : worktree ? "on" : "off"}
-        </Text>
-      )}
-      {step >= 5 && (
-        <Text>
-          <Text dimColor>{"permission: "}</Text>
-          {step === 5 ? choice(PERMS, permIdx) : PERMS[permIdx]}
-        </Text>
-      )}
-      {step >= 6 && (
-        <Text>
-          <Text dimColor>{"queue now:  "}</Text>
-          {choice(["yes", "no"], queueNow ? 0 : 1)}
+          {choice(SIZES, sizeIdx)}
         </Text>
       )}
       <Text dimColor>
@@ -198,9 +145,8 @@ export function NewTaskForm(props: {
           ? "type to filter, ↑↓ to pick (↑ past top = free input), Enter to confirm"
           : step === 1
             ? "type + Enter"
-            : "h/l to choose, Enter to confirm"}
+            : "h/l size · Enter creates & opens $EDITOR"}
         {" · Esc cancel"}
-        {step === 6 ? " · Enter opens $EDITOR for the prompt" : ""}
       </Text>
     </Box>
   );
