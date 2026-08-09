@@ -1,6 +1,6 @@
 /** Single source of truth for keybindings; the help overlay renders this. */
 export const KEYMAP: Array<{ keys: string; action: string; context: string }> = [
-  { keys: "1 / 2 / 3 / 4", action: "Harvest / Board / Dashboard / Config tab", context: "global" },
+  { keys: "1 / 2 / 3", action: "Harvest / Board / Config tab", context: "global" },
   { keys: "?", action: "toggle help", context: "global" },
   { keys: "q", action: "quit", context: "global" },
   { keys: "R", action: "force refresh", context: "global" },

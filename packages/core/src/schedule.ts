@@ -21,7 +21,7 @@ export function resolveMode(schedule: Config["schedule"], now: Date): ScheduleMo
   return schedule.defaultMode;
 }
 
-/** Milliseconds until the next window-boundary change (for dashboard display). */
+/** Milliseconds until the next window-boundary change (for display). */
 export function msUntilModeChange(schedule: Config["schedule"], now: Date): number {
   const t = now.getHours() * 60 + now.getMinutes();
   const boundaries = schedule.windows

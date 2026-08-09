@@ -12,6 +12,15 @@ describe("config", () => {
     expect(c.herdr.socketPath.endsWith("/.config/herdr/herdr.sock")).toBe(true);
     expect(c.defaults.worktree).toBe(true);
     expect(c.defaults.permissionMode).toBe("auto");
+    expect(c.forecast.sessionPctPerTask).toBe(15);
+  });
+
+  test("forecast pct-per-task defaults and stays a usable divisor", () => {
+    expect(parseConfig("").forecast.sessionPctPerTask).toBe(15);
+    expect(parseConfig(`[forecast]\nsession_pct_per_task = 8\n`).forecast.sessionPctPerTask).toBe(8);
+    // 0 would divide the headroom into infinite tasks; >100 is not a percentage
+    expect(() => parseConfig(`[forecast]\nsession_pct_per_task = 0\n`)).toThrow(ConfigError);
+    expect(() => parseConfig(`[forecast]\nsession_pct_per_task = 101\n`)).toThrow(ConfigError);
   });
 
   test("permission modes track the claude CLI's choices", () => {

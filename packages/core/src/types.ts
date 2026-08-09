@@ -119,6 +119,14 @@ export interface Config {
     sizeEstimateTokens: Record<TaskSize, number>;
     conservativeMaxSize: TaskSize;
   };
+  forecast: {
+    /**
+     * Rough % of a 5h session one M-size task costs. Purely presentational —
+     * it turns the remaining headroom into "≈N tasks" in the TUI header and
+     * has no gating power.
+     */
+    sessionPctPerTask: number;
+  };
   herdr: {
     socketPath: string;
   };

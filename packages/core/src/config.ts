@@ -34,6 +34,12 @@ S = 2000000
 M = 8000000
 L = 20000000
 
+[forecast]
+# Rough % of a 5h session one M-size task costs. The "≈N tasks" in the TUI
+# header divides the remaining headroom by this — edit to taste. Display only:
+# it never gates a dispatch.
+session_pct_per_task = 15
+
 [herdr]
 socket_path = "~/.config/herdr/herdr.sock"
 
@@ -80,6 +86,9 @@ export const DEFAULT_CONFIG: Config = {
     weekFraction: 0.9,
     sizeEstimateTokens: { S: 2_000_000, M: 8_000_000, L: 20_000_000 },
     conservativeMaxSize: "M",
+  },
+  forecast: {
+    sessionPctPerTask: 15,
   },
   herdr: {
     socketPath: expandTilde("~/.config/herdr/herdr.sock"),
@@ -194,6 +203,9 @@ export function parseConfig(toml: string): Config {
         L: pick("quota.size_estimate_tokens.L", d.quota.sizeEstimateTokens.L, (v) => num(v, "quota.size_estimate_tokens.L", { min: 0 })),
       },
       conservativeMaxSize: pick("quota.conservative_max_size", d.quota.conservativeMaxSize, (v) => oneOf(v, "quota.conservative_max_size", SIZES)),
+    },
+    forecast: {
+      sessionPctPerTask: pick("forecast.session_pct_per_task", d.forecast.sessionPctPerTask, (v) => num(v, "forecast.session_pct_per_task", { min: 1, max: 100 })),
     },
     herdr: {
       socketPath: expandTilde(pick("herdr.socket_path", d.herdr.socketPath, (v) => str(v, "herdr.socket_path"))),

@@ -1,30 +1,30 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, render, useApp, useInput } from "ink";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
-  cancelTask, configPath, createTask, diffSummary, discoverRepos, getUsage, loadConfig, markDone,
-  readLimits, refreshLimits, retryTask, runsDir, stripPromptTemplate, taskFilePath, transition,
-  updateTask,
+  DEFAULT_CONFIG, blockedUntil, cancelTask, computeForecast, configPath, createTask, diffSummary,
+  discoverRepos, forecastLine, formatClock, loadConfig, markDone, readLimits, refreshLimits,
+  resolveMode, retryTask, runsDir, stripPromptTemplate, taskFilePath, transition, updateTask,
 } from "@collie/core";
-import type { LimitSnapshot, Task, UsageSnapshot } from "@collie/core";
-import { useHubSnapshot } from "./state.ts";
+import type { Config, LimitSnapshot, Task } from "@collie/core";
+import { useHubSnapshot, type HubSnapshot } from "./state.ts";
 import { Board, COLUMNS, NARROW_COLUMNS, columnTasks } from "./views/board.tsx";
-import { Dashboard } from "./views/dashboard.tsx";
 import { Detail } from "./views/detail.tsx";
 import { AnswerForm, Harvest, harvestList } from "./views/harvest.tsx";
 import { NewTaskForm, type NewTaskDraft } from "./views/newTask.tsx";
 import { ConfigView } from "./views/config.tsx";
 import { KEYMAP } from "./keys.ts";
+import { displayWidth, truncateToWidth } from "./cursor.ts";
 import { focusPane } from "./jump.ts";
 import { answerPane } from "./answer.ts";
 import {
   ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN, editFileInEditor, editInEditor, setRepaint,
 } from "./editor.ts";
 
-type Tab = "harvest" | "board" | "dashboard" | "config";
-const TABS: Tab[] = ["harvest", "board", "dashboard", "config"];
+type Tab = "harvest" | "board" | "config";
+const TABS: Tab[] = ["harvest", "board", "config"];
 type Overlay =
   | { kind: "none" }
   | { kind: "help" }
@@ -72,6 +72,55 @@ function questionFor(task: Task): string | null {
   });
 }
 
+interface HeaderSegment {
+  text: string;
+  color?: string;
+  dim?: boolean;
+}
+
+/**
+ * The always-on budget line: is the dog awake and in which mode, any hard stop
+ * a scraped limit hit imposed, then how much of tonight is left in tasks. Cut
+ * to the terminal width here — a wrapped header would steal a row the views
+ * below already budgeted for.
+ */
+function forecastHeader(
+  snap: HubSnapshot,
+  config: Config,
+  limits: LimitSnapshot | null,
+  columns: number,
+): HeaderSegment[] {
+  const mode = resolveMode(config.schedule, new Date());
+  const tickAgeSec = snap.dispatcher
+    ? (Date.now() - Date.parse(snap.dispatcher.lastTickAt)) / 1000
+    : null;
+  const alive = tickAgeSec !== null && tickAgeSec < config.dispatch.pollIntervalSec * 3;
+
+  const segments: HeaderSegment[] = [
+    alive
+      ? { text: `● ${mode === "conservative" ? "cons" : mode}`, color: mode === "paused" ? "yellow" : "green" }
+      : { text: "○ dead", color: "red" },
+  ];
+  const hardStop = blockedUntil(snap.quota);
+  if (hardStop) segments.push({ text: `⛔ until ${formatClock(hardStop)}`, color: "red" });
+  if (!limits) {
+    segments.push({ text: "limits unavailable — ccusage fallback", dim: true });
+  } else if (mode !== "paused") {
+    const f = computeForecast(config.quota, mode, limits, config.forecast.sessionPctPerTask);
+    segments.push({
+      text: forecastLine(f, limits.weeklyPct, config.quota.weekFraction * 100),
+      dim: true,
+    });
+  }
+
+  let left = columns;
+  return segments.map((s, i) => {
+    const text = truncateToWidth(i === 0 ? s.text : `  ${s.text}`, left);
+    left -= displayWidth(text);
+    return { ...s, text };
+  });
+}
+
 function App(): React.JSX.Element {
   const { exit } = useApp();
   const [tab, setTab] = useState<Tab>("harvest");
@@ -82,7 +131,6 @@ function App(): React.JSX.Element {
   const [focusRow, setFocusRow] = useState(0);
   const [focusIdx, setFocusIdx] = useState(0); // harvest list cursor
   const [showFailed, setShowFailed] = useState(false);
-  const [usage, setUsage] = useState<UsageSnapshot | null>(null);
   const [limits, setLimits] = useState<LimitSnapshot | null>(null);
   const [flash, setFlash] = useState("");
   const [rows, setRows] = useState(process.stdout.rows ?? 24);
@@ -101,18 +149,10 @@ function App(): React.JSX.Element {
     };
   }, []);
 
-  // usage gauge refresh (ccusage subprocess, 60s core cache) — dashboard only
+  // Real limit percentages, feeding the always-on forecast header. refreshLimits
+  // is a no-op inside its 10min window, so this mostly reads the file the
+  // dispatcher already wrote.
   useEffect(() => {
-    if (tab !== "dashboard") return;
-    setUsage(getUsage());
-    const t = setInterval(() => setUsage(getUsage()), 60_000);
-    return () => clearInterval(t);
-  }, [tab]);
-
-  // Real limit percentages. refreshLimits is a no-op inside its 10min window, so
-  // this mostly reads the file the dispatcher already wrote.
-  useEffect(() => {
-    if (tab !== "dashboard") return;
     const pull = () => {
       setLimits(readLimits());
       void refreshLimits().then((r) => r.snapshot && setLimits(r.snapshot));
@@ -120,7 +160,16 @@ function App(): React.JSX.Element {
     pull();
     const t = setInterval(pull, 60_000);
     return () => clearInterval(t);
-  }, [tab]);
+  }, []);
+
+  // config.toml is a file read: once per snapshot, not once per keystroke
+  const config = useMemo(() => {
+    try {
+      return loadConfig();
+    } catch {
+      return DEFAULT_CONFIG; // the Config tab is where an invalid file gets reported
+    }
+  }, [snap.refreshedAt]);
 
   const flashMsg = (msg: string) => {
     setFlash(msg);
@@ -223,8 +272,7 @@ function App(): React.JSX.Element {
     else if (input === "R") refresh();
     else if (input === "1") setTab("harvest");
     else if (input === "2") setTab("board");
-    else if (input === "3") setTab("dashboard");
-    else if (input === "4") setTab("config");
+    else if (input === "3") setTab("config");
     else if (tab === "config" && input === "e") {
       if (editFileInEditor(configPath())) refresh();
     } else if (tab === "harvest") {
@@ -318,6 +366,14 @@ function App(): React.JSX.Element {
   const answerTask =
     overlay.kind === "answer" ? snap.tasks.find((t) => t.id === overlay.taskId) : undefined;
 
+  // Second header line: is the dog awake, and how much of tonight is left.
+  // Overlays suppress it — the new-task and answer forms anchor the hardware
+  // cursor to screen rows counted from the top (REPO_ROW, ANSWER_INPUT_ROW),
+  // and an extra line above them would move the input out from under the IME.
+  const headerLine =
+    overlay.kind === "none" ? forecastHeader(snap, config, limits, columns) : null;
+  const bodyRows = rows - (headerLine ? 2 : 1);
+
   return (
     <Box flexDirection="column" height={rows}>
       {/* the wordmark and the help hint are the first things to go on a phone —
@@ -336,6 +392,15 @@ function App(): React.JSX.Element {
           </Text>
         )}
       </Box>
+      {headerLine && (
+        <Box>
+          {headerLine.map((s, i) => (
+            <Text key={i} color={s.color} dimColor={s.dim}>
+              {s.text}
+            </Text>
+          ))}
+        </Box>
+      )}
       {overlay.kind === "answer" && answerTask ? (
         <AnswerForm
           task={answerTask}
@@ -346,20 +411,13 @@ function App(): React.JSX.Element {
         />
       ) : overlay.kind === "new" ? (
         <NewTaskForm
-          defaults={(() => {
-            try {
-              const c = loadConfig();
-              return { worktree: c.defaults.worktree, permissionMode: c.defaults.permissionMode };
-            } catch {
-              return { worktree: true, permissionMode: "auto" as const };
-            }
-          })()}
+          defaults={{ worktree: config.defaults.worktree, permissionMode: config.defaults.permissionMode }}
           knownRepos={(() => {
             let discovered: string[] = [];
             try {
-              discovered = discoverRepos(loadConfig().repos.roots);
+              discovered = discoverRepos(config.repos.roots);
             } catch {
-              // invalid config: fall back to recent-task repos only
+              // unreadable roots: fall back to recent-task repos only
             }
             // recent-task repos first (most likely targets), then the rest
             const recent = [...new Set(snap.tasks.map((t) => t.repo))];
@@ -369,7 +427,7 @@ function App(): React.JSX.Element {
           onCancel={() => setOverlay({ kind: "none" })}
         />
       ) : overlay.kind === "detail" && detailTask ? (
-        <Detail task={detailTask} columns={columns} rows={rows - 1} />
+        <Detail task={detailTask} columns={columns} rows={bodyRows} />
       ) : overlay.kind === "help" ? (
         <Box flexDirection="column" paddingX={1} borderStyle="round">
           {KEYMAP.map((k) => (
@@ -385,14 +443,12 @@ function App(): React.JSX.Element {
           tasks={snap.tasks}
           focusIdx={focusIdx}
           columns={columns}
-          rows={rows - 1}
+          rows={bodyRows}
           diffFor={diffFor}
           questionFor={questionFor}
         />
       ) : tab === "board" ? (
-        <Board tasks={snap.tasks} focusCol={focusCol} focusRow={focusRow} showFailed={showFailed} now={snap.refreshedAt} columns={columns} rows={rows - 1} />
-      ) : tab === "dashboard" ? (
-        <Dashboard snap={snap} usage={usage} limits={limits} />
+        <Board tasks={snap.tasks} focusCol={focusCol} focusRow={focusRow} showFailed={showFailed} now={snap.refreshedAt} columns={columns} rows={bodyRows} />
       ) : (
         <ConfigView />
       )}

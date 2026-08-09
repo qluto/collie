@@ -12,6 +12,7 @@ export * from "./prompt.ts";
 export * from "./git.ts";
 export * from "./quota/gate.ts";
 export * from "./quota/limits-api.ts";
+export * from "./quota/forecast.ts";
 export * from "./quota/ccusage.ts";
 export * from "./quota/limits.ts";
 export * from "./quota/state.ts";
