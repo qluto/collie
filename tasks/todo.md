@@ -425,3 +425,21 @@ Plan: /Users/qluto/.claude/plans/flickering-singing-mango.md
 - [x] Stage 5 — 軸削除（defer/backlog 廃止, done アーカイブ, Asking 表記）※pre-flight済: ライブ backlog 0件
 - [x] Stage 6 — burn-down クォータモード（effectiveSessionFraction）
 - [x] Stage 7 — presence 検出（ioreg HIDIdleTime, default off）
+
+### Review (refocus 完了)
+
+全7ステージ + docs 同期を main に積んだ（d3745f9 → 6fded7e、計8コミット）。
+各ステージで bun test + tsc green を確認、Stage 1/5/6/7 の後に live dispatcher を
+restart。最終 152 tests / 438 expects / 0 fail。
+
+実機 herdr E2E（temp COLLIE_HOME + sandbox repo）: 投函 → 即 dispatch →
+質問で blocked → run.question + runs/<id>/question.txt に捕獲 → answerPane で
+返答 → 再開 → complete → review（resultSummary・answer.txt 確認）→ done →
+tasks/archive/ へ移動 → pane close。全フェーズ成功。
+
+**確認された既知の限界**（計画の「後回し」項目そのまま）: エージェントの質問が
+選択肢メニュー（AskUserQuestion / permission ダイアログ）の場合、`a` のリテラル
+送信 + Enter はテキストを伝えず、ハイライト中の選択肢を選んでしまう
+（E2E では BLUE と答えたのに red が選ばれた）。メニュー型の質問には `J` ジャンプが
+正道。次ラウンド候補: pane.read でメニューを検出したら answer overlay が選択肢
+ピッカーに切り替わる構造化回答。
