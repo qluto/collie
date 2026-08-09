@@ -4,8 +4,8 @@ import * as path from "node:path";
 import { parseArgs } from "node:util";
 import { spawnSync } from "node:child_process";
 import {
-  cancelTask, createTask, getTask, listTasks, transition, updateTask,
-  expandTilde,
+  cancelTask, createTask, getTask, listTasks, retryTask, transition, updateTask,
+  expandTilde, stripPromptTemplate, PERMISSION_MODES,
   type Task, type TaskSize, type TaskStatus, type PermissionMode,
 } from "@collie/core";
 
@@ -34,7 +34,7 @@ function editorPrompt(initial: string): string {
 
 function fmtTask(t: Task): string {
   const wip = t.status === "running" || t.status === "blocked" ? "*" : " ";
-  return `${wip} ${t.id}  ${t.status.padEnd(8)} p${String(t.priority).padEnd(4)} ${t.size}  ${path.basename(t.repo).padEnd(20)} ${t.title}`;
+  return `${wip} ${t.id}  ${t.status.padEnd(8)} p${String(t.priority).padEnd(4)} ${t.size}${t.defer ? "☾" : " "} ${path.basename(t.repo).padEnd(20)} ${t.title}`;
 }
 
 export function runTaskCommand(argv: string[]): number {
@@ -49,6 +49,7 @@ export function runTaskCommand(argv: string[]): number {
           prompt: { type: "string" },
           size: { type: "string", default: "M" },
           priority: { type: "string", default: "100" },
+          defer: { type: "boolean", default: false },
           "no-worktree": { type: "boolean", default: false },
           "permission-mode": { type: "string" },
           queue: { type: "boolean", default: false },
@@ -59,14 +60,20 @@ export function runTaskCommand(argv: string[]): number {
       const repo = path.resolve(expandTilde(values.repo));
       if (!fs.existsSync(repo)) die(`repo path does not exist: ${repo}`);
       if (!["S", "M", "L"].includes(values.size!)) die("--size must be S|M|L");
-      const prompt = values.prompt ?? editorPrompt(`<!-- Write the task prompt for "${values.title}" below. Lines starting with <!-- are kept. -->\n\n`);
-      if (prompt.trim().length === 0) die("empty prompt; task not created");
+      if (values["permission-mode"] && !PERMISSION_MODES.includes(values["permission-mode"] as PermissionMode)) {
+        die(`--permission-mode must be one of ${PERMISSION_MODES.join("|")}`);
+      }
+      const prompt = stripPromptTemplate(
+        values.prompt ?? editorPrompt(`<!-- Write the task prompt for "${values.title}" below. This comment is dropped. -->\n\n`),
+      );
+      if (prompt.length === 0) die("empty prompt; task not created");
       const task = createTask({
         title: values.title,
         repo,
         prompt,
         size: values.size as TaskSize,
         priority: Number(values.priority),
+        defer: values.defer,
         worktree: values["no-worktree"] ? false : undefined,
         permissionMode: values["permission-mode"] as PermissionMode | undefined,
         status: values.queue ? "queued" : "backlog",
@@ -107,9 +114,8 @@ export function runTaskCommand(argv: string[]): number {
       return 0;
     }
     case "retry": {
-      const t = requireTask(rest[0]);
-      const next = transition(t.id, "queued", undefined, { source: "cli" });
-      console.log(`${next.id} -> queued (attempt ${next.attempts}/${next.maxAttempts})`);
+      const next = retryTask(requireTask(rest[0]).id, { source: "cli" });
+      console.log(`${next.id} -> queued (attempts reset, 0/${next.maxAttempts})`);
       return 0;
     }
     case "done": {

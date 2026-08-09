@@ -11,7 +11,21 @@ export type TaskSize = "S" | "M" | "L";
 
 export type ScheduleMode = "full" | "conservative" | "paused";
 
-export type PermissionMode = "default" | "plan" | "acceptEdits" | "bypassPermissions";
+/**
+ * Mirrors `claude --permission-mode` (2.1.226 choices). `auto` is claude's own
+ * default: a classifier runs the tool calls it judges low-risk and blocks the
+ * rest — the right fit for unattended dispatch. `default` is not in the CLI's
+ * advertised choices anymore (it was renamed `manual`) but is still accepted,
+ * so task files written before the rename keep working.
+ */
+export type PermissionMode =
+  | "auto"
+  | "acceptEdits"
+  | "plan"
+  | "manual"
+  | "dontAsk"
+  | "bypassPermissions"
+  | "default";
 
 export interface TaskRun {
   paneId?: string;
@@ -33,6 +47,11 @@ export interface Task {
   repo: string;
   priority: number;
   size: TaskSize;
+  /**
+   * "Not urgent — only dispatch in a full schedule window." Orthogonal to
+   * size (token cost) and priority (queue order): this one gates eligibility.
+   */
+  defer: boolean;
   worktree: boolean;
   branch?: string;
   permissionMode: PermissionMode;
@@ -56,6 +75,7 @@ export interface NewTaskInput {
   prompt: string;
   priority?: number;
   size?: TaskSize;
+  defer?: boolean;
   worktree?: boolean;
   permissionMode?: PermissionMode;
   claudeArgs?: string[];
@@ -88,6 +108,8 @@ export interface Config {
     weekBudgetTokens: number;
     fractionFull: number;
     fractionConservative: number;
+    /** cap on the weekly limit, shared by the real-percentage and token paths */
+    weekFraction: number;
     sizeEstimateTokens: Record<TaskSize, number>;
     conservativeMaxSize: TaskSize;
   };
@@ -102,6 +124,10 @@ export interface Config {
     permissionMode: PermissionMode;
     worktree: boolean;
     worktreeRoot: string;
+  };
+  done: {
+    /** tear the task's pane/worktree down as part of `collie done` */
+    close: boolean;
   };
 }
 

@@ -28,7 +28,7 @@ const LEGAL_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
 // --- (de)serialization ------------------------------------------------------
 
 const FRONTMATTER_KEYS: Array<keyof Task> = [
-  "id", "title", "status", "repo", "priority", "size", "worktree", "branch",
+  "id", "title", "status", "repo", "priority", "size", "defer", "worktree", "branch",
   "permissionMode", "claudeArgs", "createdAt", "updatedAt", "queuedAt",
   "startedAt", "endedAt", "attempts", "maxAttempts", "rev", "run",
 ];
@@ -54,7 +54,8 @@ export function parseTaskFile(content: string, sourcePath: string): Task {
   if (!(t.status in LEGAL_TRANSITIONS)) {
     throw new StoreError(`${sourcePath}: unknown status "${t.status}"`);
   }
-  return { ...t, claudeArgs: t.claudeArgs ?? [], prompt };
+  // defer postdates the first task files — absent means "dispatch anytime"
+  return { ...t, claudeArgs: t.claudeArgs ?? [], defer: t.defer ?? false, prompt };
 }
 
 /** Atomic write: temp file in the same directory + rename. */
@@ -126,6 +127,7 @@ export function createTask(input: NewTaskInput, opts?: { source?: string }): Tas
     repo: input.repo,
     priority: input.priority ?? 100,
     size: input.size ?? "M",
+    defer: input.defer ?? false,
     worktree: input.worktree ?? d.worktree,
     permissionMode: input.permissionMode ?? d.permissionMode,
     claudeArgs: input.claudeArgs ?? [],
@@ -202,6 +204,36 @@ export function transition(
     });
     return task;
   });
+}
+
+/**
+ * Human-initiated re-run: back to queued with a fresh attempt budget. Without
+ * the reset, retrying a task that already exhausted its attempts hands the
+ * dispatcher zero retries — the first hiccup fails it again immediately.
+ */
+export function retryTask(id: string, opts?: { source?: string }): Task {
+  transition(id, "queued", undefined, opts);
+  return updateTask(id, (t) => {
+    t.attempts = 0;
+  });
+}
+
+/**
+ * Human-in-the-loop completion, run from the agent's own pane. Idempotent so a
+ * second keypress is a no-op rather than an error. running/blocked route
+ * through review: the human looking at the session knows more than the
+ * completion callback that never arrived.
+ */
+export function markDone(id: string, opts?: { source?: string }): Task {
+  const task = getTask(id);
+  if (!task) throw new StoreError(`no such task: ${id}`);
+  if (task.status === "done") return task;
+  if (task.status === "running" || task.status === "blocked") {
+    transition(id, "review", undefined, opts);
+  } else if (task.status !== "review") {
+    throw new StoreError(`task ${id} is ${task.status}; only a running or review task can be marked done`);
+  }
+  return transition(id, "done", undefined, opts);
 }
 
 /** Cancel: any non-terminal status -> failed (queued/backlog cancel is a plain delete-from-queue). */

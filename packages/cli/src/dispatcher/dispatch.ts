@@ -8,10 +8,21 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/**
+ * Where to spawn. `rootPaneId` is the shell pane a freshly created workspace
+ * comes with: `agent.start` always splits off a NEW pane (it has no "run in
+ * this pane" argument — unknown fields are silently ignored on 0.7.1), so that
+ * shell would sit next to the agent forever. Dispatch closes it.
+ */
+interface SpawnTarget {
+  workspaceId?: string;
+  rootPaneId?: string;
+}
+
 /** Find a workspace to spawn into: an existing agent pane with the same cwd wins. */
-async function resolveWorkspace(ctx: DispatcherCtx, cwd: string): Promise<string | undefined> {
+async function resolveWorkspace(ctx: DispatcherCtx, cwd: string): Promise<SpawnTarget> {
   const existing = ctx.agents.find((a) => a.cwd === cwd || a.foreground_cwd === cwd);
-  if (existing) return existing.workspace_id;
+  if (existing) return { workspaceId: existing.workspace_id }; // someone else's pane: leave it alone
   try {
     const res = await ctx.herdr.request<Record<string, unknown>>("workspace.create", {
       cwd,
@@ -20,10 +31,34 @@ async function resolveWorkspace(ctx: DispatcherCtx, cwd: string): Promise<string
     });
     // tolerate shape drift: workspace id may sit at several places
     const ws = res.workspace as Record<string, unknown> | undefined;
-    return (res.workspace_id ?? ws?.workspace_id ?? ws?.id ?? res.id) as string | undefined;
+    return {
+      workspaceId: (res.workspace_id ?? ws?.workspace_id ?? ws?.id ?? res.id) as string | undefined,
+      rootPaneId: rootPaneOf(res),
+    };
   } catch (err) {
     log(ctx, `workspace.create failed for ${cwd}: ${(err as Error).message}; spawning without workspace`);
-    return undefined;
+    return {};
+  }
+}
+
+function rootPaneOf(res: Record<string, unknown>): string | undefined {
+  const pane = res.root_pane as Record<string, unknown> | undefined;
+  return pane?.pane_id as string | undefined;
+}
+
+/**
+ * Free the agent name before requeueing. `agent.start` names are server-unique
+ * and the task id doubles as the name, so a pane left behind by a failed
+ * dispatch makes EVERY retry die with agent_name_taken — the task then burns
+ * all its attempts without ever running. These panes never received a prompt,
+ * so there is nothing to inspect (unlike a cancelled task's live pane).
+ */
+async function closeHalfSpawnedPane(ctx: DispatcherCtx, taskId: string, paneId: string): Promise<void> {
+  try {
+    await ctx.herdr.request("pane.close", { pane_id: paneId });
+    log(ctx, `task ${taskId}: closed half-spawned pane ${paneId}`);
+  } catch (err) {
+    log(ctx, `task ${taskId}: pane.close ${paneId} failed: ${(err as Error).message}`);
   }
 }
 
@@ -60,6 +95,7 @@ export function requeueOrFail(ctx: DispatcherCtx, taskId: string, reason: string
 interface WorktreeResult {
   path: string;
   workspaceId: string;
+  rootPaneId?: string;
 }
 
 /**
@@ -74,13 +110,21 @@ async function ensureWorktree(ctx: DispatcherCtx, task: Task): Promise<WorktreeR
     task.id,
   );
   const branch = task.branch ?? `collie/${task.id}`;
-  type WtResponse = { workspace?: { workspace_id?: string }; worktree?: { path?: string } };
+  type WtResponse = {
+    workspace?: { workspace_id?: string };
+    worktree?: { path?: string };
+    root_pane?: { pane_id?: string };
+  };
   try {
     const res = await ctx.herdr.request<WtResponse>("worktree.create", {
       cwd: task.repo, branch, path: wtPath, label: task.id, focus: false,
     });
     if (res.workspace?.workspace_id) {
-      return { path: res.worktree?.path ?? wtPath, workspaceId: res.workspace.workspace_id };
+      return {
+        path: res.worktree?.path ?? wtPath,
+        workspaceId: res.workspace.workspace_id,
+        rootPaneId: res.root_pane?.pane_id,
+      };
     }
     return { error: `worktree.create returned no workspace: ${JSON.stringify(res).slice(0, 120)}` };
   } catch (createErr) {
@@ -89,6 +133,9 @@ async function ensureWorktree(ctx: DispatcherCtx, task: Task): Promise<WorktreeR
       const res = await ctx.herdr.request<WtResponse>("worktree.open", {
         cwd: task.repo, path: wtPath, label: task.id, focus: false,
       });
+      // No rootPaneId here on purpose: reopening can hand back a workspace that
+      // was already open, whose root pane may be one a human is using. Only a
+      // pane we just created is ours to close.
       if (res.workspace?.workspace_id) return { path: wtPath, workspaceId: res.workspace.workspace_id };
     } catch {
       // fall through to the workspace scan below
@@ -112,6 +159,7 @@ export async function dispatchTask(ctx: DispatcherCtx, task: Task): Promise<void
 
   let cwd = task.repo;
   let workspaceId: string | undefined;
+  let rootPaneId: string | undefined;
   if (task.worktree) {
     const wt = await ensureWorktree(ctx, task);
     if ("error" in wt) {
@@ -120,9 +168,10 @@ export async function dispatchTask(ctx: DispatcherCtx, task: Task): Promise<void
     }
     cwd = wt.path;
     workspaceId = wt.workspaceId;
+    rootPaneId = wt.rootPaneId;
     log(ctx, `task ${task.id}: worktree ${cwd} (workspace ${workspaceId})`);
   } else {
-    workspaceId = await resolveWorkspace(ctx, cwd);
+    ({ workspaceId, rootPaneId } = await resolveWorkspace(ctx, cwd));
   }
 
   let paneId: string;
@@ -148,6 +197,15 @@ export async function dispatchTask(ctx: DispatcherCtx, task: Task): Promise<void
     paneId = (agent.pane_id ?? res.pane_id) as string;
     tabId = (agent.tab_id ?? res.tab_id) as string | undefined;
     if (!paneId) throw new Error(`agent.start returned no pane_id: ${JSON.stringify(res)}`);
+    // The workspace's own shell pane has served its purpose (it only existed so
+    // the workspace could exist); leave the agent alone in the tab.
+    if (rootPaneId && rootPaneId !== paneId) {
+      try {
+        await ctx.herdr.request("pane.close", { pane_id: rootPaneId });
+      } catch (closeErr) {
+        log(ctx, `task ${task.id}: could not close root pane ${rootPaneId}: ${(closeErr as Error).message}`);
+      }
+    }
   } catch (err) {
     requeueOrFail(ctx, task.id, `spawn_failed: ${(err as Error).message}`);
     return;
@@ -189,6 +247,7 @@ export async function dispatchTask(ctx: DispatcherCtx, task: Task): Promise<void
     await sleep(2000);
   }
   if (!ready) {
+    await closeHalfSpawnedPane(ctx, task.id, paneId);
     requeueOrFail(ctx, task.id, "spawn_timeout");
     return;
   }
@@ -216,6 +275,7 @@ export async function dispatchTask(ctx: DispatcherCtx, task: Task): Promise<void
     }
   }
   if (!injected) {
+    await closeHalfSpawnedPane(ctx, task.id, paneId);
     requeueOrFail(ctx, task.id, "inject_failed");
     return;
   }

@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as net from "node:net";
 import { spawnSync } from "node:child_process";
-import { ConfigError, ensureDataDirs, hubHome, loadConfig } from "@collie/core";
+import { ConfigError, ensureDataDirs, hubHome, loadConfig, refreshLimits } from "@collie/core";
 
 function check(label: string, ok: boolean, detail?: string): boolean {
   console.log(`${ok ? "ok " : "FAIL"}  ${label}${detail ? ` — ${detail}` : ""}`);
@@ -44,6 +44,16 @@ export async function runDoctor(): Promise<number> {
 
   const ccusage = spawnSync("bunx", ["ccusage", "--version"], { encoding: "utf8", timeout: 30_000 });
   allOk = check("ccusage runnable (bunx)", ccusage.status === 0, ccusage.stdout?.trim() || ccusage.stderr?.trim()?.slice(0, 80)) && allOk;
+
+  // Not fatal: without it the gate falls back to ccusage token estimates.
+  const limits = await refreshLimits();
+  check(
+    "claude usage API (real limit %)",
+    limits.snapshot !== null,
+    limits.snapshot
+      ? `session ${limits.snapshot.sessionPct}%, week ${limits.snapshot.weeklyPct}%`
+      : limits.skipped ?? "unavailable",
+  );
 
   return allOk ? 0 : 1;
 }

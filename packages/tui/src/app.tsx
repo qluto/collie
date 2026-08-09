@@ -2,16 +2,18 @@ import React, { useEffect, useState } from "react";
 import { Box, Text, render, useApp, useInput } from "ink";
 import { spawnSync } from "node:child_process";
 import {
-  cancelTask, configPath, createTask, discoverRepos, getUsage, loadConfig, taskFilePath, transition, updateTask,
+  cancelTask, configPath, createTask, discoverRepos, getUsage, loadConfig, readLimits, refreshLimits,
+  retryTask, stripPromptTemplate, taskFilePath, transition, updateTask,
 } from "@collie/core";
-import type { Task, UsageSnapshot } from "@collie/core";
+import type { LimitSnapshot, Task, UsageSnapshot } from "@collie/core";
 import { useHubSnapshot } from "./state.ts";
-import { Board, COLUMNS, columnTasks } from "./views/board.tsx";
+import { Board, COLUMNS, NARROW_COLUMNS, columnTasks } from "./views/board.tsx";
 import { Dashboard } from "./views/dashboard.tsx";
 import { Detail } from "./views/detail.tsx";
 import { NewTaskForm, type NewTaskDraft } from "./views/newTask.tsx";
 import { ConfigView } from "./views/config.tsx";
 import { KEYMAP } from "./keys.ts";
+import { focusPane } from "./jump.ts";
 import {
   ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN, editFileInEditor, editInEditor, setRepaint,
 } from "./editor.ts";
@@ -34,12 +36,18 @@ function App(): React.JSX.Element {
   const [focusRow, setFocusRow] = useState(0);
   const [showFailed, setShowFailed] = useState(false);
   const [usage, setUsage] = useState<UsageSnapshot | null>(null);
+  const [limits, setLimits] = useState<LimitSnapshot | null>(null);
   const [flash, setFlash] = useState("");
   const [rows, setRows] = useState(process.stdout.rows ?? 24);
+  const [columns, setColumns] = useState(process.stdout.columns ?? 80);
+  const narrow = columns < NARROW_COLUMNS;
 
   // fill the terminal and follow resizes
   useEffect(() => {
-    const onResize = () => setRows(process.stdout.rows ?? 24);
+    const onResize = () => {
+      setRows(process.stdout.rows ?? 24);
+      setColumns(process.stdout.columns ?? 80);
+    };
     process.stdout.on("resize", onResize);
     return () => {
       process.stdout.off("resize", onResize);
@@ -51,6 +59,19 @@ function App(): React.JSX.Element {
     if (tab !== "dashboard") return;
     setUsage(getUsage());
     const t = setInterval(() => setUsage(getUsage()), 60_000);
+    return () => clearInterval(t);
+  }, [tab]);
+
+  // Real limit percentages. refreshLimits is a no-op inside its 10min window, so
+  // this mostly reads the file the dispatcher already wrote.
+  useEffect(() => {
+    if (tab !== "dashboard") return;
+    const pull = () => {
+      setLimits(readLimits());
+      void refreshLimits().then((r) => r.snapshot && setLimits(r.snapshot));
+    };
+    pull();
+    const t = setInterval(pull, 60_000);
     return () => clearInterval(t);
   }, [tab]);
 
@@ -78,8 +99,13 @@ function App(): React.JSX.Element {
 
   const submitNewTask = (draft: NewTaskDraft) => {
     setOverlay({ kind: "none" });
-    const prompt = editInEditor(`<!-- Prompt for "${draft.title}". Save & quit to create the task. -->\n\n`);
-    if (prompt === null || prompt.trim().length === 0 || prompt.trim().startsWith("<!--") && prompt.trim().split("\n").length <= 2) {
+    const raw = editInEditor(`<!-- Prompt for "${draft.title}". Save & quit to create the task. -->\n\n`);
+    if (raw === null) {
+      flashMsg("editor exited non-zero; task not created");
+      return;
+    }
+    const prompt = stripPromptTemplate(raw);
+    if (prompt.length === 0) {
       flashMsg("empty prompt; task not created");
       return;
     }
@@ -90,6 +116,7 @@ function App(): React.JSX.Element {
           repo: draft.repo,
           prompt,
           size: draft.size,
+          defer: draft.defer,
           worktree: draft.worktree,
           permissionMode: draft.permissionMode,
           status: draft.queueNow ? "queued" : "backlog",
@@ -110,7 +137,11 @@ function App(): React.JSX.Element {
       const task = snap.tasks.find((t) => t.id === overlay.taskId);
       if (key.escape || input === "q") setOverlay({ kind: "none" });
       else if (input === "e" && task) openPromptEditor(task);
-      else if (input === "y" && task?.run?.paneId) {
+      else if (input === "g" && task?.run?.paneId) {
+        const paneId = task.run.paneId;
+        flashMsg(`jumping to ${paneId}…`);
+        void focusPane(paneId).catch((err) => flashMsg(`jump failed: ${(err as Error).message}`));
+      } else if (input === "y" && task?.run?.paneId) {
         spawnSync("pbcopy", { input: task.run.paneId });
         flashMsg(`copied ${task.run.paneId}`);
       }
@@ -160,10 +191,17 @@ function App(): React.JSX.Element {
         else if (task.status === "queued") act(() => transition(task.id, "backlog", undefined, { source: "tui" }));
       } else if (input === "e" && task && (task.status === "backlog" || task.status === "queued")) {
         openPromptEditor(task);
+      } else if (input === "D" && task && (task.status === "backlog" || task.status === "queued")) {
+        act(() => {
+          const next = updateTask(task.id, (t) => {
+            t.defer = !t.defer;
+          });
+          flashMsg(next.defer ? `${next.id} deferred (full windows only)` : `${next.id} dispatchable anytime`);
+        });
       } else if (input === "d" && task?.status === "review") {
         act(() => transition(task.id, "done", undefined, { source: "tui" }));
       } else if (input === "r" && task && (task.status === "review" || task.status === "failed")) {
-        act(() => transition(task.id, "queued", undefined, { source: "tui" }));
+        act(() => retryTask(task.id, { source: "tui" }));
       } else if (input === "x" && task && task.status !== "done") {
         setOverlay({ kind: "confirm-cancel", taskId: task.id });
       } else if ((input === "J" || input === "K") && task?.status === "queued") {
@@ -191,14 +229,16 @@ function App(): React.JSX.Element {
 
   return (
     <Box flexDirection="column" height={rows}>
-      <Box gap={2}>
-        <Text>🐑🐑🐕</Text>
+      {/* the wordmark and the help hint are the first things to go on a phone —
+          a wrapped header would eat a row the stacked board budgeted for */}
+      <Box gap={narrow ? 1 : 2}>
+        {!narrow && <Text>🐑🐑🐕</Text>}
         {(["board", "dashboard", "config"] as Tab[]).map((t, i) => (
           <Text key={t} bold={tab === t} underline={tab === t} dimColor={tab !== t}>
-            {`${i + 1}:${t}`}
+            {`${i + 1}:${narrow ? t.slice(0, 4) : t}`}
           </Text>
         ))}
-        <Text dimColor>? help</Text>
+        {!narrow && <Text dimColor>? help</Text>}
         {flash && (
           <Text color="yellow" wrap="truncate">
             {flash}
@@ -212,7 +252,7 @@ function App(): React.JSX.Element {
               const c = loadConfig();
               return { worktree: c.defaults.worktree, permissionMode: c.defaults.permissionMode };
             } catch {
-              return { worktree: true, permissionMode: "acceptEdits" as const };
+              return { worktree: true, permissionMode: "auto" as const };
             }
           })()}
           knownRepos={(() => {
@@ -230,7 +270,7 @@ function App(): React.JSX.Element {
           onCancel={() => setOverlay({ kind: "none" })}
         />
       ) : overlay.kind === "detail" && detailTask ? (
-        <Detail task={detailTask} />
+        <Detail task={detailTask} columns={columns} rows={rows - 1} />
       ) : overlay.kind === "help" ? (
         <Box flexDirection="column" paddingX={1} borderStyle="round">
           {KEYMAP.map((k) => (
@@ -242,9 +282,9 @@ function App(): React.JSX.Element {
           ))}
         </Box>
       ) : tab === "board" ? (
-        <Board tasks={snap.tasks} focusCol={focusCol} focusRow={focusRow} showFailed={showFailed} now={snap.refreshedAt} />
+        <Board tasks={snap.tasks} focusCol={focusCol} focusRow={focusRow} showFailed={showFailed} now={snap.refreshedAt} columns={columns} rows={rows - 1} />
       ) : tab === "dashboard" ? (
-        <Dashboard snap={snap} usage={usage} />
+        <Dashboard snap={snap} usage={usage} limits={limits} />
       ) : (
         <ConfigView />
       )}

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { quotaAllows, sizeFits, type UsageSnapshot } from "../src/quota/gate.ts";
+import { modeAdmits, quotaAllows, sizeFits, type UsageSnapshot } from "../src/quota/gate.ts";
 import { clearUsageCache, getUsage } from "../src/quota/ccusage.ts";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 
@@ -52,6 +52,28 @@ describe("sizeFits", () => {
     expect(sizeFits("S", "M")).toBe(true);
     expect(sizeFits("M", "M")).toBe(true);
     expect(sizeFits("L", "M")).toBe(false);
+  });
+});
+
+describe("modeAdmits", () => {
+  const cap = quota.conservativeMaxSize; // "M"
+
+  test("full takes everything, including deferred and oversized", () => {
+    expect(modeAdmits({ defer: true, size: "L" }, "full", cap)).toBe(true);
+  });
+
+  test("paused takes nothing", () => {
+    expect(modeAdmits({ defer: false, size: "S" }, "paused", cap)).toBe(false);
+  });
+
+  test("conservative skips deferred tasks regardless of size", () => {
+    expect(modeAdmits({ defer: false, size: "S" }, "conservative", cap)).toBe(true);
+    expect(modeAdmits({ defer: true, size: "S" }, "conservative", cap)).toBe(false);
+  });
+
+  test("conservative still applies the size cap to non-deferred tasks", () => {
+    expect(modeAdmits({ defer: false, size: "M" }, "conservative", cap)).toBe(true);
+    expect(modeAdmits({ defer: false, size: "L" }, "conservative", cap)).toBe(false);
   });
 });
 

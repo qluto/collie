@@ -21,6 +21,8 @@ export interface DispatcherCtx {
   agents: HerdrAgentInfo[];
   verbose: boolean;
   lastDecision: string;
+  /** last limits-refresh skip reason, so the log isn't repeated every tick */
+  lastLimitsSkip?: string;
   degraded: boolean;
 }
 

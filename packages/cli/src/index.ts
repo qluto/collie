@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 import { runTaskCommand } from "./commands/task.ts";
+import { runDoneCommand } from "./commands/done.ts";
+import { runGcCommand } from "./commands/gc.ts";
 import { runDoctor } from "./commands/doctor.ts";
 import { runHookCommand } from "./commands/hook.ts";
 import { runDispatcherCommand } from "./commands/dispatcher.ts";
@@ -8,6 +10,7 @@ const USAGE = `collie — task queue for Claude Code sessions on Herdr
 
 Usage:
   collie task add --repo <path> --title <t> [--size S|M|L] [--priority N]
+                     [--defer]                   (not urgent: full windows only)
                      [--no-worktree] [--permission-mode <m>] [--queue]
                      [--prompt <text>]           (omit --prompt to open $EDITOR)
   collie task list [--status s1,s2] [--json]
@@ -15,6 +18,13 @@ Usage:
   collie task queue|backlog|retry|cancel|done <id>
   collie task complete <id> --summary "<text>"
   collie task fail <id> --reason "<text>" [--retryable]
+  collie done [<id>] [--close]   # review -> done; id defaults to the task
+                            # owning $COLLIE_TASK_ID or the focused herdr pane.
+                            # --close also removes the worktree / closes the pane
+  collie gc [--dry-run]     # drop finished tasks' worktrees and merged branches
+  collie dispatcher run [--once] [--verbose] | status
+  collie dispatcher install | restart | uninstall     (launchd)
+  collie tui
   collie doctor
 `;
 
@@ -23,6 +33,10 @@ async function main(argv: string[]): Promise<number> {
   switch (group) {
     case "task":
       return runTaskCommand(rest);
+    case "done":
+      return runDoneCommand(rest);
+    case "gc":
+      return runGcCommand(rest);
     case "doctor":
       return runDoctor();
     case "dispatcher":

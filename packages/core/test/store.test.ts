@@ -14,7 +14,7 @@ function freshHome(): string {
 // so a single static import is fine as long as env is set before calls).
 import {
   createTask, getTask, listTasks, transition, updateTask, cancelTask,
-  parseTaskFile, serializeTask, tailEvents, IllegalTransitionError,
+  markDone, parseTaskFile, retryTask, serializeTask, tailEvents, IllegalTransitionError,
 } from "../src/index.ts";
 
 beforeEach(() => {
@@ -39,6 +39,66 @@ describe("store basics", () => {
     expect(got!.prompt).toBe("Do the thing.\n\nWith **markdown**.\n");
     expect(got!.rev).toBe(0);
     expect(got!.branch).toBe(`collie/${t.id}`);
+  });
+
+  test("markDone: review -> done, running routes through review, idempotent", () => {
+    const reviewed = createTask({ title: "a", repo: "/tmp", prompt: "p", status: "queued" });
+    transition(reviewed.id, "running");
+    transition(reviewed.id, "review", { resultSummary: "did it" });
+    expect(markDone(reviewed.id).status).toBe("done");
+    // a second keypress must not throw
+    expect(markDone(reviewed.id).status).toBe("done");
+
+    // the human at the pane knows the session is finished even if it never
+    // called back: running -> review -> done in one step
+    const running = createTask({ title: "b", repo: "/tmp", prompt: "p", status: "queued" });
+    transition(running.id, "running");
+    expect(markDone(running.id).status).toBe("done");
+    expect(tailEvents(10, running.id).map((e) => e.to)).toEqual(["queued", "running", "review", "done"]);
+  });
+
+  test("markDone refuses tasks that were never dispatched", () => {
+    const queued = createTask({ title: "c", repo: "/tmp", prompt: "p", status: "queued" });
+    expect(() => markDone(queued.id)).toThrow(/is queued/);
+  });
+
+  test("retryTask restores a full attempt budget", () => {
+    const t = createTask({ title: "a", repo: "/tmp", prompt: "p", status: "queued" });
+    updateTask(t.id, (task) => {
+      task.attempts = task.maxAttempts;
+    });
+    transition(t.id, "failed", { failureReason: "boom" }, { source: "test" });
+    const next = retryTask(t.id, { source: "test" });
+    expect(next.status).toBe("queued");
+    expect(next.attempts).toBe(0);
+  });
+
+  test("defer defaults to false and survives a round-trip", () => {
+    const plain = createTask({ title: "a", repo: "/tmp", prompt: "p" });
+    expect(getTask(plain.id)!.defer).toBe(false);
+    const deferred = createTask({ title: "b", repo: "/tmp", prompt: "p", defer: true });
+    expect(getTask(deferred.id)!.defer).toBe(true);
+    expect(parseTaskFile(serializeTask(deferred), "mem").defer).toBe(true);
+  });
+
+  test("task files written before defer existed parse as not-deferred", () => {
+    const legacy = `---
+id: t-20260101-aaaa
+title: legacy
+status: backlog
+repo: /tmp
+priority: 100
+size: M
+worktree: false
+permissionMode: acceptEdits
+createdAt: 2026-01-01T00:00:00.000Z
+updatedAt: 2026-01-01T00:00:00.000Z
+attempts: 0
+maxAttempts: 2
+rev: 0
+---
+body`;
+    expect(parseTaskFile(legacy, "mem").defer).toBe(false);
   });
 
   test("serialize/parse round-trip with run sub-object", () => {

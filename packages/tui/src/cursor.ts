@@ -79,3 +79,54 @@ export function displayWidth(s: string): number {
   }
   return width;
 }
+
+/**
+ * Truncate to a cell budget, appending "…" when it doesn't fit. Ink's own
+ * wrap="truncate" miscounts CJK by a cell and pushes the column border off
+ * the row, so every board string goes through this instead.
+ */
+export function truncateToWidth(s: string, cells: number): string {
+  if (cells <= 0) return "";
+  if (displayWidth(s) <= cells) return s;
+  let out = "";
+  let width = 0;
+  for (const ch of s) {
+    const w = displayWidth(ch);
+    if (width + w > cells - 1) break; // reserve one cell for the ellipsis
+    out += ch;
+    width += w;
+  }
+  return `${out}…`;
+}
+
+/**
+ * Break into at most `maxLines` lines of `cells` display width; the last line
+ * gets an "…" when text remains. Breaks at a space when one is available so
+ * English titles don't split mid-word — CJK has no spaces and wraps anywhere.
+ */
+export function wrapToWidth(s: string, cells: number, maxLines: number): string[] {
+  if (cells <= 0 || maxLines <= 0) return [];
+  let rest = s;
+  const lines: string[] = [];
+  while (rest.length > 0 && lines.length < maxLines) {
+    if (displayWidth(rest) <= cells) {
+      lines.push(rest);
+      return lines;
+    }
+    if (lines.length === maxLines - 1) break; // last line: truncate below
+    let cut = "";
+    let width = 0;
+    for (const ch of rest) {
+      const w = displayWidth(ch);
+      if (width + w > cells) break;
+      cut += ch;
+      width += w;
+    }
+    const lastSpace = cut.lastIndexOf(" ");
+    if (lastSpace > 0 && rest[cut.length] !== " ") cut = cut.slice(0, lastSpace);
+    lines.push(cut);
+    rest = rest.slice(cut.length).replace(/^ +/, "");
+  }
+  if (rest) lines.push(truncateToWidth(rest, cells));
+  return lines;
+}

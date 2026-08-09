@@ -11,6 +11,7 @@ const task = (over: Partial<Task>): Task => ({
   repo: "/tmp/repo",
   priority: 100,
   size: "M",
+  defer: false,
   worktree: false,
   permissionMode: "acceptEdits",
   claudeArgs: [],
@@ -32,13 +33,13 @@ describe("Board", () => {
       task({ id: "t-4", status: "review", title: "four" }),
     ];
     const { lastFrame } = render(
-      <Board tasks={tasks} focusCol={1} focusRow={0} showFailed={false} now={Date.now()} />,
+      <Board tasks={tasks} focusCol={1} focusRow={0} showFailed={false} now={Date.now()} columns={100} />,
     );
     const frame = lastFrame()!;
-    expect(frame).toContain("Backlog (1)");
-    expect(frame).toContain("Queued (1)");
-    expect(frame).toContain("Running (1)");
-    expect(frame).toContain("Review (1)");
+    // unfocused headers are truncated to fit; the count is never dropped
+    expect(frame).toContain("Queued 1"); // focused column keeps its full name
+    expect(frame).toMatch(/Backl\S* 1/);
+    expect(frame).toMatch(/Runni\S* 1/);
     expect(frame).toContain("two");
   });
 
@@ -50,11 +51,40 @@ describe("Board", () => {
     expect(columnTasks(tasks, 5, false).map((t) => t.id)).toEqual(["t-1"]);
     expect(columnTasks(tasks, 5, true).map((t) => t.id)).toEqual(["t-2"]);
     const { lastFrame } = render(
-      <Board tasks={tasks} focusCol={5} focusRow={0} showFailed={true} now={Date.now()} />,
+      <Board tasks={tasks} focusCol={5} focusRow={0} showFailed={true} now={Date.now()} columns={100} />,
     );
     // note: the test renderer is narrow; keep titles short of the truncation
-    expect(lastFrame()!).toContain("Failed (1)");
+    expect(lastFrame()!).toContain("Failed 1");
     expect(lastFrame()!).toContain("ng");
+  });
+
+  test("CJK titles never push a column border off its row", async () => {
+    const { displayWidth } = await import("../src/cursor.ts");
+    const tasks = [
+      task({ id: "t-1", status: "queued", title: "プロンプトアシスタントバグ修正" }),
+      task({ id: "t-2", status: "running", title: "認証フローのリファクタリング" }),
+      task({ id: "t-3", status: "review", title: "日本語のとても長いタイトルが並んだとき" }),
+    ];
+    // check every column as the focused one: the wide card moves around
+    for (let col = 0; col < COLUMNS.length; col++) {
+      const { lastFrame } = render(
+        <Board tasks={tasks} focusCol={col} focusRow={0} showFailed={false} now={Date.now()} columns={100} />,
+      );
+      const rows = lastFrame()!
+        .split("\n")
+        .map((l) => displayWidth(l.replace(/\[[0-9;]*m/g, "")));
+      expect(new Set(rows).size).toBe(1); // all rows are the same width -> borders line up
+      expect(rows[0]).toBeLessThanOrEqual(100);
+    }
+  });
+
+  test("the focused column is wide enough for a real title", () => {
+    const title = "プロンプトアシスタントバグ修正";
+    const { lastFrame } = render(
+      <Board tasks={[task({ id: "t-1", status: "queued", title })]}
+        focusCol={1} focusRow={0} showFailed={false} now={Date.now()} columns={100} />,
+    );
+    expect(lastFrame()!).toContain(title); // in full, not truncated
   });
 
   test("running card shows heartbeat badge", () => {
@@ -62,9 +92,68 @@ describe("Board", () => {
       task({ id: "t-3", status: "running", title: "x", run: { lastHeartbeatAt: new Date().toISOString() } }),
     ];
     const { lastFrame } = render(
-      <Board tasks={tasks} focusCol={2} focusRow={0} showFailed={false} now={Date.now()} />,
+      <Board tasks={tasks} focusCol={2} focusRow={0} showFailed={false} now={Date.now()} columns={100} />,
     );
     expect(lastFrame()!).toContain("●");
+  });
+
+  test("deferred card is marked, plain card is not", () => {
+    const tasks = [task({ id: "t-4", status: "queued", title: "x", defer: true })];
+    const { lastFrame } = render(
+      <Board tasks={tasks} focusCol={1} focusRow={0} showFailed={false} now={Date.now()} columns={100} />,
+    );
+    expect(lastFrame()!).toContain("M☾");
+
+    const plain = render(
+      <Board tasks={[task({ id: "t-5", status: "queued", title: "x" })]} focusCol={1} focusRow={0} showFailed={false} now={Date.now()} columns={100} />,
+    );
+    expect(plain.lastFrame()!).not.toContain("☾");
+  });
+
+  test("a narrow terminal stacks the lanes vertically", async () => {
+    const { displayWidth } = await import("../src/cursor.ts");
+    const tasks = [
+      task({ id: "q1", status: "queued", title: "プロンプトアシスタントバグ修正" }),
+      task({ id: "r1", status: "running", title: "認証フローのリファクタリング" }),
+    ];
+    const { lastFrame } = render(
+      <Board tasks={tasks} focusCol={1} focusRow={0} showFailed={false} now={Date.now()} columns={44} rows={20} />,
+    );
+    const frame = lastFrame()!;
+    expect(frame).not.toContain("╭"); // no side-by-side boxes
+    expect(frame).toContain("▸ Queued 1"); // focused lane marked
+    expect(frame).toContain("Running 1");
+    expect(frame).toContain("プロンプトアシスタントバグ修正"); // full title, not truncated to 6 cells
+    // empty lanes collapse away entirely instead of eating rows
+    expect(frame).not.toContain("Blocked");
+    for (const line of frame.split("\n")) {
+      expect(displayWidth(line.replace(/\[[0-9;]*m/g, ""))).toBeLessThanOrEqual(44);
+    }
+  });
+
+  test("stacked layout never renders more rows than it was given", async () => {
+    const many = Array.from({ length: 12 }, (_, i) =>
+      task({ id: `t${i}`, status: (["backlog", "queued", "running", "review"] as const)[i % 4], title: `task ${i}` }),
+    );
+    for (const rows of [6, 8, 12, 20]) {
+      const { lastFrame } = render(
+        <Board tasks={many} focusCol={1} focusRow={2} showFailed={false} now={Date.now()} columns={44} rows={rows} />,
+      );
+      const frame = lastFrame()!;
+      expect(frame.split("\n").length).toBeLessThanOrEqual(rows);
+      // whatever is dropped is stated, never silently missing
+      if (rows <= 8) expect(frame).toMatch(/…/);
+    }
+  });
+
+  test("the selected card stays visible when a lane is trimmed", () => {
+    const many = Array.from({ length: 10 }, (_, i) =>
+      task({ id: `q${i}`, status: "queued", title: `queued task ${i}` }),
+    );
+    const { lastFrame } = render(
+      <Board tasks={many} focusCol={1} focusRow={9} showFailed={false} now={Date.now()} columns={44} rows={8} />,
+    );
+    expect(lastFrame()!).toContain("queued task 9");
   });
 
   test("COLUMNS covers every non-failed status", () => {

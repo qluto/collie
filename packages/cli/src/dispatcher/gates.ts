@@ -1,5 +1,5 @@
 import {
-  blockedUntil, getUsage, listTasks, quotaAllows, resolveMode, sizeFits,
+  blockedUntil, getUsage, limitsAllow, listTasks, modeAdmits, quotaAllows, readLimits, resolveMode,
 } from "@collie/core";
 import type { ScheduleMode, Task } from "@collie/core";
 import type { DispatcherCtx } from "./ctx.ts";
@@ -28,21 +28,28 @@ export function planTick(ctx: DispatcherCtx, now = new Date()): TickPlan {
     return { mode, decision: `wip full (${wip}/${ctx.config.dispatch.wipLimit})` };
   }
 
+  const cap = ctx.config.quota.conservativeMaxSize;
   const queued = listTasks({ status: ["queued"] }).filter((t) => !t.run?.paneId);
-  const candidate = queued.find(
-    (t) => mode === "full" || sizeFits(t.size, ctx.config.quota.conservativeMaxSize),
-  );
+  const candidate = queued.find((t) => modeAdmits(t, mode, cap));
   if (!candidate) {
-    const skipped = queued.length;
-    return {
-      mode,
-      decision: skipped
-        ? `no candidate fits ${mode} mode (${skipped} queued, size cap ${ctx.config.quota.conservativeMaxSize})`
-        : `queue empty (wip ${wip}/${ctx.config.dispatch.wipLimit})`,
-    };
+    if (queued.length === 0) {
+      return { mode, decision: `queue empty (wip ${wip}/${ctx.config.dispatch.wipLimit})` };
+    }
+    const deferred = queued.filter((t) => t.defer).length;
+    const oversized = queued.length - deferred;
+    const why = [
+      deferred ? `${deferred} deferred` : "",
+      oversized ? `${oversized} over size cap ${cap}` : "",
+    ].filter(Boolean).join(", ");
+    return { mode, decision: `no candidate fits ${mode} mode (${why}) — waiting for a full window` };
   }
 
-  const verdict = quotaAllows(ctx.config.quota, mode, candidate.size, getUsage());
+  // Anthropic's own percentages when we have a fresh reading (refreshLimits runs
+  // at the top of the tick); ccusage's token estimate only as a fallback.
+  const limits = readLimits();
+  const verdict = limits
+    ? limitsAllow(ctx.config.quota, mode, limits)
+    : quotaAllows(ctx.config.quota, mode, candidate.size, getUsage());
   if (!verdict.allow) return { mode, decision: verdict.reason };
 
   return { mode, task: candidate, decision: `dispatching ${candidate.id} (${verdict.reason})` };

@@ -10,6 +10,16 @@ describe("config", () => {
     expect(c.quota.sizeEstimateTokens.M).toBe(8_000_000);
     expect(c.herdr.socketPath.endsWith("/.config/herdr/herdr.sock")).toBe(true);
     expect(c.defaults.worktree).toBe(true);
+    expect(c.defaults.permissionMode).toBe("auto");
+  });
+
+  test("permission modes track the claude CLI's choices", () => {
+    for (const m of ["auto", "acceptEdits", "plan", "manual", "dontAsk", "bypassPermissions"]) {
+      expect(parseConfig(`[defaults]\npermission_mode = "${m}"\n`).defaults.permissionMode).toBe(m as never);
+    }
+    // legacy alias kept: task files predate the default -> manual rename
+    expect(parseConfig(`[defaults]\npermission_mode = "default"\n`).defaults.permissionMode).toBe("default");
+    expect(() => parseConfig(`[defaults]\npermission_mode = "yolo"\n`)).toThrow(ConfigError);
   });
 
   test("empty file yields defaults", () => {

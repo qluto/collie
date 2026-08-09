@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import {
-  ConfigError, dispatcherStatePath, ensureDataDirs, listTasks, loadConfig,
+  ConfigError, dispatcherStatePath, ensureDataDirs, listTasks, loadConfig, refreshLimits,
   type DispatcherState, type ScheduleMode,
 } from "@collie/core";
 import { createCtx, log, vlog, type DispatcherCtx } from "./ctx.ts";
@@ -50,6 +50,14 @@ export async function tick(ctx: DispatcherCtx): Promise<void> {
     if (err instanceof ConfigError) log(ctx, `config invalid, keeping previous: ${err.message}`);
     else throw err;
   }
+
+  // Real limit percentages, at most one call per 10 minutes (the module caches
+  // to disk, so the TUI reads the same snapshot instead of polling separately).
+  const limits = await refreshLimits();
+  if (limits.skipped && limits.skipped !== ctx.lastLimitsSkip) {
+    log(ctx, `limits: ${limits.skipped}; falling back to ccusage estimates`);
+  }
+  ctx.lastLimitsSkip = limits.skipped;
 
   await reconcile(ctx);
   await watchdog(ctx);

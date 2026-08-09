@@ -11,10 +11,13 @@ export const KEYMAP: Array<{ keys: string; action: string; context: string }> = 
   { keys: "e", action: "edit prompt in $EDITOR (backlog/queued)", context: "board" },
   { keys: "space", action: "toggle backlog <-> queued", context: "board" },
   { keys: "J K", action: "priority reorder (queued)", context: "board" },
+  { keys: "D", action: "toggle defer ☾ — full windows only (backlog/queued)", context: "board" },
   { keys: "d", action: "promote review -> done", context: "board" },
   { keys: "r", action: "requeue (review/failed)", context: "board" },
   { keys: "x", action: "cancel task (confirm)", context: "board" },
   { keys: "f", action: "toggle done/failed column", context: "board" },
   { keys: "e", action: "edit config.toml in $EDITOR", context: "config" },
+  { keys: "g", action: "jump to the task's Herdr pane", context: "detail" },
+  { keys: "y", action: "copy pane id", context: "detail" },
   { keys: "Esc", action: "back / dismiss", context: "detail/dialogs" },
 ];

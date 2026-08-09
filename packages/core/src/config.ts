@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import { parse as parseToml } from "smol-toml";
 import { configPath, expandTilde } from "./paths.ts";
-import type { Config, ScheduleMode, ScheduleWindow, TaskSize } from "./types.ts";
+import type { Config, PermissionMode, ScheduleMode, ScheduleWindow, TaskSize } from "./types.ts";
 
 export const DEFAULT_CONFIG_TOML = `[dispatch]
 wip_limit = 2
@@ -23,8 +23,9 @@ default_mode = "conservative"   # applies outside all windows
 # and set block_budget_tokens slightly below it. Start conservative.
 block_budget_tokens = 60000000
 week_budget_tokens = 800000000
-fraction_full = 0.85
+fraction_full = 0.85          # of the 5h session limit
 fraction_conservative = 0.35
+week_fraction = 0.9           # of the 7-day limit, both modes
 conservative_max_size = "M"
 
 [quota.size_estimate_tokens]
@@ -35,13 +36,24 @@ L = 20000000
 [herdr]
 socket_path = "~/.config/herdr/herdr.sock"
 
+[done]
+# true = "collie done" also tears the task down: worktree tasks go through
+# worktree.remove (checkout deleted, pane + workspace closed, BRANCH KEPT),
+# others just get their pane closed. Refused on an uncommitted worktree.
+# "collie done --close" does this for one task regardless of the setting.
+close = false
+
 [repos]
 # Parent directories scanned (2 levels deep) for the new-task repo picker.
 # Works for flat layouts (~/dev/projects) and ghq host roots (~/ghq/github.com).
 roots = []
 
 [defaults]
-permission_mode = "acceptEdits"
+# auto|acceptEdits|plan|manual|dontAsk|bypassPermissions (claude --permission-mode).
+# auto = classifier runs low-risk tool calls, blocks the rest; unattended-safe.
+# bypassPermissions shows a confirmation dialog on startup that the dispatcher
+# does NOT auto-confirm — a task using it will wedge until a human clicks it.
+permission_mode = "auto"
 worktree = true
 worktree_root = "~/dev/worktrees"
 `;
@@ -63,6 +75,7 @@ export const DEFAULT_CONFIG: Config = {
     weekBudgetTokens: 800_000_000,
     fractionFull: 0.85,
     fractionConservative: 0.35,
+    weekFraction: 0.9,
     sizeEstimateTokens: { S: 2_000_000, M: 8_000_000, L: 20_000_000 },
     conservativeMaxSize: "M",
   },
@@ -73,9 +86,12 @@ export const DEFAULT_CONFIG: Config = {
     roots: [],
   },
   defaults: {
-    permissionMode: "acceptEdits",
+    permissionMode: "auto",
     worktree: true,
     worktreeRoot: expandTilde("~/dev/worktrees"),
+  },
+  done: {
+    close: false,
   },
 };
 
@@ -83,7 +99,10 @@ export class ConfigError extends Error {}
 
 const MODES: ScheduleMode[] = ["full", "conservative", "paused"];
 const SIZES: TaskSize[] = ["S", "M", "L"];
-const PERMISSION_MODES = ["default", "plan", "acceptEdits", "bypassPermissions"];
+/** Mirrors `claude --permission-mode`, plus the legacy `default` alias. */
+export const PERMISSION_MODES: PermissionMode[] = [
+  "auto", "acceptEdits", "plan", "manual", "dontAsk", "bypassPermissions", "default",
+];
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 function fail(msg: string): never {
@@ -165,6 +184,7 @@ export function parseConfig(toml: string): Config {
       weekBudgetTokens: pick("quota.week_budget_tokens", d.quota.weekBudgetTokens, (v) => num(v, "quota.week_budget_tokens", { min: 1 })),
       fractionFull: pick("quota.fraction_full", d.quota.fractionFull, (v) => num(v, "quota.fraction_full", { min: 0, max: 1 })),
       fractionConservative: pick("quota.fraction_conservative", d.quota.fractionConservative, (v) => num(v, "quota.fraction_conservative", { min: 0, max: 1 })),
+      weekFraction: pick("quota.week_fraction", d.quota.weekFraction, (v) => num(v, "quota.week_fraction", { min: 0, max: 1 })),
       sizeEstimateTokens: {
         S: pick("quota.size_estimate_tokens.S", d.quota.sizeEstimateTokens.S, (v) => num(v, "quota.size_estimate_tokens.S", { min: 0 })),
         M: pick("quota.size_estimate_tokens.M", d.quota.sizeEstimateTokens.M, (v) => num(v, "quota.size_estimate_tokens.M", { min: 0 })),
@@ -182,12 +202,18 @@ export function parseConfig(toml: string): Config {
       }),
     },
     defaults: {
-      permissionMode: pick("defaults.permission_mode", d.defaults.permissionMode, (v) => oneOf(v, "defaults.permission_mode", PERMISSION_MODES as readonly Config["defaults"]["permissionMode"][])),
+      permissionMode: pick("defaults.permission_mode", d.defaults.permissionMode, (v) => oneOf(v, "defaults.permission_mode", PERMISSION_MODES)),
       worktree: pick("defaults.worktree", d.defaults.worktree, (v) => {
         if (typeof v !== "boolean") fail("defaults.worktree must be a boolean");
         return v;
       }),
       worktreeRoot: expandTilde(pick("defaults.worktree_root", d.defaults.worktreeRoot, (v) => str(v, "defaults.worktree_root"))),
+    },
+    done: {
+      close: pick("done.close", d.done.close, (v) => {
+        if (typeof v !== "boolean") fail("done.close must be a boolean");
+        return v;
+      }),
     },
   };
 }

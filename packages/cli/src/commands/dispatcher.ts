@@ -12,12 +12,13 @@ function plistDest(): string {
   return path.join(os.homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
 }
 
-function launchctl(args: string[], opts?: { allowFail?: boolean }): string {
+/** Returns null when the call failed and opts.allowFail was set. */
+function launchctl(args: string[], opts?: { allowFail?: boolean }): string | null {
   try {
     // pipe stderr so expected failures (idempotent bootout) stay silent
     return execFileSync("launchctl", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   } catch (err) {
-    if (opts?.allowFail) return "";
+    if (opts?.allowFail) return null;
     throw err;
   }
 }
@@ -40,6 +41,24 @@ function installLaunchd(): number {
   console.log(`installed + started ${LABEL}`);
   console.log(`  plist: ${plistDest()}`);
   console.log(`  logs:  tail -f ~/.collie/logs/dispatcher.log`);
+  return 0;
+}
+
+/**
+ * Pick up new code without re-rendering the plist. kickstart -k kills the
+ * running process first; it fails when the label isn't loaded (plist on disk
+ * but booted out), so fall back to a bootstrap.
+ */
+function restartLaunchd(): number {
+  if (!fs.existsSync(plistDest())) {
+    console.error("not installed — run `collie dispatcher install`");
+    return 1;
+  }
+  const domain = `gui/${process.getuid!()}`;
+  if (launchctl(["kickstart", "-k", `${domain}/${LABEL}`], { allowFail: true }) === null) {
+    launchctl(["bootstrap", domain, plistDest()]);
+  }
+  console.log(`restarted ${LABEL}`);
   return 0;
 }
 
@@ -67,10 +86,12 @@ export async function runDispatcherCommand(argv: string[]): Promise<number> {
       return dispatcherStatus();
     case "install":
       return installLaunchd();
+    case "restart":
+      return restartLaunchd();
     case "uninstall":
       return uninstallLaunchd();
     default:
-      console.error(`usage: collie dispatcher run [--once] [--verbose] | status | install | uninstall`);
+      console.error(`usage: collie dispatcher run [--once] [--verbose] | status | install | restart | uninstall`);
       return 2;
   }
 }

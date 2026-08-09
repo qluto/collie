@@ -37,6 +37,11 @@ export function dispatcherStatePath(): string {
   return path.join(hubHome(), "dispatcher.json");
 }
 
+/** Cached copy of Anthropic's own limit percentages (see quota/limits-api.ts). */
+export function limitsStatePath(): string {
+  return path.join(hubHome(), "limits.json");
+}
+
 export function lockPath(): string {
   return path.join(hubHome(), "lock");
 }
