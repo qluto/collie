@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
-  commitsAhead, deleteMergedBranch, dirtyFiles, mergedBranches, removeWorktree,
+  commitsAhead, deleteMergedBranch, diffSummary, dirtyFiles, mergedBranches, removeWorktree,
 } from "../src/git.ts";
 
 let repo: string;
@@ -63,6 +63,33 @@ describe("git helpers", () => {
     fs.writeFileSync(path.join(repo, "scratch.txt"), "wip\n");
     expect(dirtyFiles(repo).length).toBe(1);
     expect(dirtyFiles(path.join(repo, "does-not-exist"))).toEqual([]);
+  });
+
+  test("diffSummary counts a worktree branch's own work", () => {
+    const wt = path.join(repo, "..", path.basename(repo) + "-wt4");
+    run(repo, "worktree", "add", "-q", "-b", "collie/work", wt);
+    fs.writeFileSync(path.join(wt, "README.md"), "hi\nthere\n");
+    commit(wt, "feature.txt", "one\ntwo\nthree\n");
+
+    const summary = diffSummary(repo, "collie/work", wt)!;
+    expect(summary).toContain("1 commit");
+    expect(summary).toContain("2 files");
+    expect(summary).toContain("+4"); // 3 added lines + 1 changed line in README
+    expect(summary).toContain("−0");
+
+    // a branch that vanished (worktree pruned, branch deleted) is not an error
+    expect(diffSummary(repo, "collie/no-such-branch", wt)).toBeNull();
+    expect(diffSummary(path.join(repo, "nope"), "collie/work", undefined)).toBeNull();
+    removeWorktree(repo, wt);
+  });
+
+  test("diffSummary falls back to the dirty working tree without a branch", () => {
+    expect(diffSummary(repo, undefined, undefined)).toBeNull(); // clean
+    fs.writeFileSync(path.join(repo, "README.md"), "hi\nmore\n");
+    fs.writeFileSync(path.join(repo, "untracked.txt"), "new\n");
+    const summary = diffSummary(repo, undefined, undefined)!;
+    expect(summary).toContain("2 dirty"); // untracked counts, unlike --shortstat
+    expect(summary).toContain("1 file +1 −0");
   });
 
   test("removeWorktree refuses a dirty checkout", () => {

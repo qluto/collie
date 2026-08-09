@@ -41,6 +41,51 @@ export function commitsAhead(repoRoot: string, branch: string): string[] {
   return res.ok ? res.out.split("\n").filter(Boolean) : [];
 }
 
+/** " 3 files changed, 120 insertions(+), 8 deletions(-)" -> "3 files +120 −8". */
+function formatShortstat(out: string): string | null {
+  const files = /(\d+) files? changed/.exec(out)?.[1];
+  if (!files) return null;
+  const ins = /(\d+) insertions?\(\+\)/.exec(out)?.[1] ?? "0";
+  const del = /(\d+) deletions?\(-\)/.exec(out)?.[1] ?? "0";
+  return `${files} file${files === "1" ? "" : "s"} +${ins} −${del}`;
+}
+
+/**
+ * One line of "what did this task actually change", for the harvest view.
+ *
+ * A worktree task is measured three-dot (`HEAD...branch`): two-dot would count
+ * everything HEAD gained since the branch forked, which is the human's work,
+ * not the agent's. A non-worktree task committed nothing of its own to compare
+ * against, so its evidence is the checkout it ran in being dirty.
+ * Any git failure (branch gone, worktree pruned, repo moved) answers null —
+ * the caller renders nothing rather than an error.
+ */
+export function diffSummary(
+  repoRoot: string,
+  branch: string | undefined,
+  worktreePath: string | undefined,
+): string | null {
+  if (branch) {
+    const res = git(repoRoot, ["diff", "--shortstat", `HEAD...${branch}`]);
+    if (!res.ok) return null;
+    const commits = commitsAhead(repoRoot, branch).length;
+    const parts = [
+      commits > 0 ? `${commits} commit${commits === 1 ? "" : "s"}` : "",
+      formatShortstat(res.out) ?? "",
+    ].filter(Boolean);
+    return parts.length > 0 ? parts.join(" · ") : null;
+  }
+  const cwd = worktreePath ?? repoRoot;
+  const res = git(cwd, ["diff", "--shortstat"]);
+  if (!res.ok) return null;
+  const dirty = dirtyFiles(cwd).length;
+  const parts = [
+    dirty > 0 ? `${dirty} dirty` : "",
+    formatShortstat(res.out) ?? "",
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
 /** git worktree remove — refuses on a dirty checkout unless forced. */
 export function removeWorktree(repoRoot: string, worktreePath: string): GitResult {
   return git(repoRoot, ["worktree", "remove", worktreePath]);

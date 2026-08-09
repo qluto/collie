@@ -1,39 +1,86 @@
 import React, { useEffect, useState } from "react";
 import { Box, Text, render, useApp, useInput } from "ink";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
-  cancelTask, configPath, createTask, discoverRepos, getUsage, loadConfig, readLimits, refreshLimits,
-  retryTask, stripPromptTemplate, taskFilePath, transition, updateTask,
+  cancelTask, configPath, createTask, diffSummary, discoverRepos, getUsage, loadConfig, markDone,
+  readLimits, refreshLimits, retryTask, runsDir, stripPromptTemplate, taskFilePath, transition,
+  updateTask,
 } from "@collie/core";
 import type { LimitSnapshot, Task, UsageSnapshot } from "@collie/core";
 import { useHubSnapshot } from "./state.ts";
 import { Board, COLUMNS, NARROW_COLUMNS, columnTasks } from "./views/board.tsx";
 import { Dashboard } from "./views/dashboard.tsx";
 import { Detail } from "./views/detail.tsx";
+import { AnswerForm, Harvest, harvestList } from "./views/harvest.tsx";
 import { NewTaskForm, type NewTaskDraft } from "./views/newTask.tsx";
 import { ConfigView } from "./views/config.tsx";
 import { KEYMAP } from "./keys.ts";
 import { focusPane } from "./jump.ts";
+import { answerPane } from "./answer.ts";
 import {
   ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN, editFileInEditor, editInEditor, setRepaint,
 } from "./editor.ts";
 
-type Tab = "board" | "dashboard" | "config";
+type Tab = "harvest" | "board" | "dashboard" | "config";
+const TABS: Tab[] = ["harvest", "board", "dashboard", "config"];
 type Overlay =
   | { kind: "none" }
   | { kind: "help" }
   | { kind: "detail"; taskId: string }
   | { kind: "new" }
+  | { kind: "answer"; taskId: string }
   | { kind: "confirm-cancel"; taskId: string };
+
+/**
+ * The harvest cards want a git shortstat and a scraped pane per task, both of
+ * which are far too expensive for the 2s snapshot poll (diffSummary is a
+ * spawnSync). Cache on `id:rev` — a task that changed gets a fresh answer —
+ * with a TTL for the work that happens outside the task file (commits landing
+ * in the worktree while the task sits in review).
+ */
+const CACHE_TTL_MS = 60_000;
+const evidenceCache = new Map<string, { at: number; value: string | null }>();
+
+function cached(key: string, compute: () => string | null): string | null {
+  const hit = evidenceCache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value;
+  let value: string | null = null;
+  try {
+    value = compute();
+  } catch {
+    // no evidence is a fine answer; the card just renders one line less
+  }
+  if (evidenceCache.size > 200) evidenceCache.clear();
+  evidenceCache.set(key, { at: Date.now(), value });
+  return value;
+}
+
+function diffFor(task: Task): string | null {
+  return cached(`diff:${task.id}:${task.rev}`, () =>
+    diffSummary(task.repo, task.branch, task.run?.worktreePath));
+}
+
+/** Tail of the pane text the dispatcher scraped behind a blocked task. */
+function questionFor(task: Task): string | null {
+  if (task.status !== "blocked" || !task.run?.questionScrapedAt) return null;
+  return cached(`q:${task.id}:${task.rev}`, () => {
+    const text = fs.readFileSync(path.join(runsDir(task.id), "question.txt"), "utf8");
+    const lines = text.split("\n").filter((l) => l.trim().length > 0);
+    return lines.slice(-10).join("\n");
+  });
+}
 
 function App(): React.JSX.Element {
   const { exit } = useApp();
-  const [tab, setTab] = useState<Tab>("board");
+  const [tab, setTab] = useState<Tab>("harvest");
   const [overlay, setOverlay] = useState<Overlay>({ kind: "none" });
-  // pause background refresh while the new-task form owns the hardware cursor
-  const [snap, refresh] = useHubSnapshot(overlay.kind === "new");
+  // pause background refresh while a text field owns the hardware cursor
+  const [snap, refresh] = useHubSnapshot(overlay.kind === "new" || overlay.kind === "answer");
   const [focusCol, setFocusCol] = useState(1); // start on Queued
   const [focusRow, setFocusRow] = useState(0);
+  const [focusIdx, setFocusIdx] = useState(0); // harvest list cursor
   const [showFailed, setShowFailed] = useState(false);
   const [usage, setUsage] = useState<UsageSnapshot | null>(null);
   const [limits, setLimits] = useState<LimitSnapshot | null>(null);
@@ -127,6 +174,19 @@ function App(): React.JSX.Element {
     });
   };
 
+  const submitAnswer = (taskId: string, text: string) => {
+    setOverlay({ kind: "none" });
+    if (text.trim().length === 0) return; // empty = cancel
+    const paneId = snap.tasks.find((t) => t.id === taskId)?.run?.paneId;
+    if (!paneId) {
+      flashMsg(`${taskId} has no pane to answer`);
+      return;
+    }
+    void answerPane(paneId, text)
+      .then(() => flashMsg(`answered ${taskId}`))
+      .catch((err) => flashMsg(`answer failed: ${(err as Error).message}`));
+  };
+
   useInput((input, key) => {
     // overlays capture input first
     if (overlay.kind === "help") {
@@ -155,17 +215,46 @@ function App(): React.JSX.Element {
       } else if (key.escape || input === "n") setOverlay({ kind: "none" });
       return;
     }
-    if (overlay.kind === "new") return; // form handles its own input
+    if (overlay.kind === "new" || overlay.kind === "answer") return; // forms handle their own input
 
     // global
     if (input === "q") exit();
     else if (input === "?") setOverlay({ kind: "help" });
     else if (input === "R") refresh();
-    else if (input === "1") setTab("board");
-    else if (input === "2") setTab("dashboard");
-    else if (input === "3") setTab("config");
+    else if (input === "1") setTab("harvest");
+    else if (input === "2") setTab("board");
+    else if (input === "3") setTab("dashboard");
+    else if (input === "4") setTab("config");
     else if (tab === "config" && input === "e") {
       if (editFileInEditor(configPath())) refresh();
+    } else if (tab === "harvest") {
+      const items = harvestList(snap.tasks);
+      const task = items[Math.min(focusIdx, items.length - 1)];
+      if (input === "j" || key.downArrow) {
+        setFocusIdx((i) => Math.min(Math.max(items.length - 1, 0), i + 1));
+      } else if (input === "k" || key.upArrow) {
+        setFocusIdx((i) => Math.max(0, i - 1));
+      } else if (input === "n") {
+        setOverlay({ kind: "new" });
+      } else if (key.return && task) {
+        setOverlay({ kind: "detail", taskId: task.id });
+      } else if (input === "J" && task) {
+        // shift, because j/k are list movement everywhere in this TUI
+        const paneId = task.run?.paneId;
+        if (!paneId) flashMsg(`${task.id} has no pane`);
+        else {
+          flashMsg(`jumping to ${paneId}…`);
+          void focusPane(paneId).catch((err) => flashMsg(`jump failed: ${(err as Error).message}`));
+        }
+      } else if (input === "d" && task) {
+        if (task.status === "review") act(() => markDone(task.id, { source: "tui" }));
+        else flashMsg("d promotes a reviewed task to done");
+      } else if (input === "a" && task) {
+        if (task.status === "blocked" && task.run?.paneId) setOverlay({ kind: "answer", taskId: task.id });
+        else flashMsg("a answers a task blocked on a question");
+      } else if (input === "r" && task && (task.status === "review" || task.status === "failed")) {
+        act(() => retryTask(task.id, { source: "tui" }));
+      }
     } else if (tab === "board") {
       const items = columnTasks(snap.tasks, focusCol, showFailed);
       const task = focusedTask();
@@ -226,6 +315,8 @@ function App(): React.JSX.Element {
 
   const detailTask =
     overlay.kind === "detail" ? snap.tasks.find((t) => t.id === overlay.taskId) : undefined;
+  const answerTask =
+    overlay.kind === "answer" ? snap.tasks.find((t) => t.id === overlay.taskId) : undefined;
 
   return (
     <Box flexDirection="column" height={rows}>
@@ -233,7 +324,7 @@ function App(): React.JSX.Element {
           a wrapped header would eat a row the stacked board budgeted for */}
       <Box gap={narrow ? 1 : 2}>
         {!narrow && <Text>🐑🐑🐕</Text>}
-        {(["board", "dashboard", "config"] as Tab[]).map((t, i) => (
+        {TABS.map((t, i) => (
           <Text key={t} bold={tab === t} underline={tab === t} dimColor={tab !== t}>
             {`${i + 1}:${narrow ? t.slice(0, 4) : t}`}
           </Text>
@@ -245,7 +336,15 @@ function App(): React.JSX.Element {
           </Text>
         )}
       </Box>
-      {overlay.kind === "new" ? (
+      {overlay.kind === "answer" && answerTask ? (
+        <AnswerForm
+          task={answerTask}
+          question={questionFor(answerTask) ?? answerTask.run?.question ?? ""}
+          columns={columns}
+          onSubmit={(text) => submitAnswer(answerTask.id, text)}
+          onCancel={() => setOverlay({ kind: "none" })}
+        />
+      ) : overlay.kind === "new" ? (
         <NewTaskForm
           defaults={(() => {
             try {
@@ -281,6 +380,15 @@ function App(): React.JSX.Element {
             </Text>
           ))}
         </Box>
+      ) : tab === "harvest" ? (
+        <Harvest
+          tasks={snap.tasks}
+          focusIdx={focusIdx}
+          columns={columns}
+          rows={rows - 1}
+          diffFor={diffFor}
+          questionFor={questionFor}
+        />
       ) : tab === "board" ? (
         <Board tasks={snap.tasks} focusCol={focusCol} focusRow={focusRow} showFailed={showFailed} now={snap.refreshedAt} columns={columns} rows={rows - 1} />
       ) : tab === "dashboard" ? (

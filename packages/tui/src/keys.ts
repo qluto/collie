@@ -1,9 +1,16 @@
 /** Single source of truth for keybindings; the help overlay renders this. */
 export const KEYMAP: Array<{ keys: string; action: string; context: string }> = [
-  { keys: "1 / 2 / 3", action: "Board / Dashboard / Config tab", context: "global" },
+  { keys: "1 / 2 / 3 / 4", action: "Harvest / Board / Dashboard / Config tab", context: "global" },
   { keys: "?", action: "toggle help", context: "global" },
   { keys: "q", action: "quit", context: "global" },
   { keys: "R", action: "force refresh", context: "global" },
+  { keys: "j k / ↓ ↑", action: "focus card", context: "harvest" },
+  { keys: "Enter", action: "task detail", context: "harvest" },
+  { keys: "d", action: "promote review -> done", context: "harvest" },
+  { keys: "a", action: "answer a blocked task in its pane", context: "harvest" },
+  { keys: "r", action: "requeue (review/failed)", context: "harvest" },
+  { keys: "J", action: "jump to the task's Herdr pane", context: "harvest" },
+  { keys: "n", action: "new task", context: "harvest" },
   { keys: "h l / ← →", action: "focus column", context: "board" },
   { keys: "j k / ↓ ↑", action: "focus card", context: "board" },
   { keys: "Enter", action: "task detail", context: "board" },

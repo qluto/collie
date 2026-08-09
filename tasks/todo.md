@@ -419,7 +419,7 @@ Plan: /Users/qluto/.claude/plans/flickering-singing-mango.md
 実装 = Opus サブエージェント / 最終レビュー = Fable（メインセッション）
 
 - [x] Stage 1 — 質問ハーベスト + WIP修正（run.question, asking_limit, WIP=running のみ）
-- [ ] Stage 2 — 収穫ビュー（harvest.tsx 新デフォルトタブ, answer.ts, diffSummary）
+- [x] Stage 2 — 収穫ビュー（harvest.tsx 新デフォルトタブ, answer.ts, diffSummary）
 - [ ] Stage 3 — 予算予報ヘッダー（forecast.ts, dashboard 削除）
 - [ ] Stage 4 — 捕獲の軽量化（newTask 3ステップ, 即 queued）
 - [ ] Stage 5 — 軸削除（defer/backlog 廃止, done アーカイブ, Asking 表記）※pre-flight: ライブ backlog triage
