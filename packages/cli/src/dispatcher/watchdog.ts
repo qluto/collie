@@ -1,4 +1,8 @@
-import { detectLimitHit, getUsage, listTasks, readQuotaState, transition, writeQuotaState } from "@collie/core";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import {
+  detectLimitHit, getUsage, listTasks, readQuotaState, runsDir, transition, updateTask, writeQuotaState,
+} from "@collie/core";
 import { log, untrackPane, type DispatcherCtx } from "./ctx.ts";
 import { extractText, reportStatus, requeueOrFail } from "./dispatch.ts";
 
@@ -53,6 +57,37 @@ export async function watchdog(ctx: DispatcherCtx): Promise<void> {
       });
     } catch {
       // notification is best-effort
+    }
+  }
+
+  await scrapeQuestions(ctx);
+}
+
+/**
+ * Capture the pane text behind every unread blocked task.
+ *
+ * The Notification hook only carries Claude's generic phrasing ("Claude is
+ * waiting for your input") — the actual question is on screen. Hooks must stay
+ * under 200ms, so the read rides this 30s tick instead. One shot per block:
+ * questionScrapedAt marks the pane as harvested.
+ */
+export async function scrapeQuestions(ctx: DispatcherCtx): Promise<void> {
+  for (const task of listTasks({ status: ["blocked"] })) {
+    const paneId = task.run?.paneId;
+    if (!paneId || task.run?.questionScrapedAt) continue;
+    try {
+      const read = await ctx.herdr.request<Record<string, unknown>>("pane.read", {
+        pane_id: paneId, source: "visible", lines: 60,
+      });
+      const dir = runsDir(task.id);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, "question.txt"), extractText(read));
+      updateTask(task.id, (t) => {
+        t.run = { ...t.run, questionScrapedAt: new Date().toISOString() };
+      });
+    } catch (err) {
+      // one unreadable pane must not cost the other tasks their scrape
+      log(ctx, `question scrape failed for ${task.id}: ${(err as Error).message}`);
     }
   }
 }

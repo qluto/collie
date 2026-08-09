@@ -60,23 +60,33 @@ export async function runHookCommand(argv: string[]): Promise<number> {
         updateTask(taskId, (t) => {
           t.run = { ...t.run, lastHeartbeatAt: now, idleSince: now };
         });
-        // A stop while blocked means the human answered the prompt in the pane.
+        // A stop while blocked means the human answered the prompt in the pane;
+        // the recorded question is stale, so clear it (explicit undefined in a
+        // transition patch deletes the run key).
         if (task.status === "blocked") {
-          transition(taskId, "running", undefined, { source: "hook-stop" });
+          transition(taskId, "running", { question: undefined, questionScrapedAt: undefined }, { source: "hook-stop" });
         }
         break;
       }
       case "notification": {
         if (task.status === "running") {
-          transition(taskId, "blocked", undefined, { source: "hook-notification" });
-          hlog(`notification: ${taskId} -> blocked`);
+          // The message is the only in-hook evidence of WHY the session stopped;
+          // the morning harvest view reads it. Capped so a runaway payload can't
+          // bloat the task file.
+          const msg = String((payload as { message?: unknown }).message ?? "").slice(0, 300);
+          transition(taskId, "blocked", { question: msg || undefined }, { source: "hook-notification" });
+          hlog(`notification: ${taskId} -> blocked${msg ? ` (${msg})` : ""}`);
           // surface it: unattended tasks waiting on permission need a human
           const socketPath = process.env.HERDR_SOCKET_PATH;
           if (socketPath) {
             try {
               await new HerdrClient(socketPath).request(
                 "notification.show",
-                { title: "collie", body: `${taskId} is waiting for input/permission`, sound: "request" },
+                {
+                  title: "collie",
+                  body: msg ? `${taskId}: ${msg.slice(0, 120)}` : `${taskId} is waiting for input/permission`,
+                  sound: "request",
+                },
                 { timeoutMs: 2000 },
               );
             } catch {

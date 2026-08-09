@@ -5,6 +5,7 @@ import type { Config, PermissionMode, ScheduleMode, ScheduleWindow, TaskSize } f
 
 export const DEFAULT_CONFIG_TOML = `[dispatch]
 wip_limit = 2
+asking_limit = 3             # blocked-on-question panes allowed to pile up before dispatch pauses
 poll_interval_sec = 30
 max_attempts = 2
 idle_grace_min = 10          # running+idle this long without completion -> review
@@ -61,6 +62,7 @@ worktree_root = "~/dev/worktrees"
 export const DEFAULT_CONFIG: Config = {
   dispatch: {
     wipLimit: 2,
+    askingLimit: 3,
     pollIntervalSec: 30,
     maxAttempts: 2,
     idleGraceMin: 10,
@@ -170,6 +172,7 @@ export function parseConfig(toml: string): Config {
   return {
     dispatch: {
       wipLimit: pick("dispatch.wip_limit", d.dispatch.wipLimit, (v) => num(v, "dispatch.wip_limit", { min: 1, max: 16 })),
+      askingLimit: pick("dispatch.asking_limit", d.dispatch.askingLimit, (v) => num(v, "dispatch.asking_limit", { min: 1, max: 16 })),
       pollIntervalSec: pick("dispatch.poll_interval_sec", d.dispatch.pollIntervalSec, (v) => num(v, "dispatch.poll_interval_sec", { min: 5 })),
       maxAttempts: pick("dispatch.max_attempts", d.dispatch.maxAttempts, (v) => num(v, "dispatch.max_attempts", { min: 1, max: 10 })),
       idleGraceMin: pick("dispatch.idle_grace_min", d.dispatch.idleGraceMin, (v) => num(v, "dispatch.idle_grace_min", { min: 1 })),

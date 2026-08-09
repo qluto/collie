@@ -72,7 +72,7 @@ export async function tick(ctx: DispatcherCtx): Promise<void> {
     if (plan.task) await dispatchTask(ctx, plan.task);
   }
 
-  const wip = listTasks({ status: ["running", "blocked"] }).length;
+  const wip = listTasks({ status: ["running"] }).length;
   writeState(ctx, wip, mode);
   vlog(ctx, `tick: ${ctx.lastDecision} (wip ${wip})`);
 }

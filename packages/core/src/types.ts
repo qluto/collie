@@ -38,6 +38,10 @@ export interface TaskRun {
   resultSummary?: string;
   failureReason?: string;
   reportSeq?: number;
+  /** Notification-hook message: why the session stopped and waited for a human. */
+  question?: string;
+  /** Set once the dispatcher has captured the pane text behind that question. */
+  questionScrapedAt?: string;
 }
 
 export interface Task {
@@ -94,6 +98,8 @@ export interface ScheduleWindow {
 export interface Config {
   dispatch: {
     wipLimit: number;
+    /** blocked-on-question tasks tolerated before dispatch pauses */
+    askingLimit: number;
     pollIntervalSec: number;
     maxAttempts: number;
     idleGraceMin: number;

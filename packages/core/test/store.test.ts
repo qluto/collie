@@ -111,6 +111,19 @@ body`;
     expect(reparsed.status).toBe("running");
   });
 
+  test("run.question persists, and an explicit undefined patch clears it", () => {
+    const t = createTask({ title: "q", repo: "/tmp", prompt: "p", status: "queued" });
+    transition(t.id, "running", undefined, { source: "test" });
+    transition(t.id, "blocked", { question: "Which migration should I run?" }, { source: "test" });
+    expect(getTask(t.id)!.run?.question).toBe("Which migration should I run?");
+
+    transition(t.id, "running", { question: undefined, questionScrapedAt: undefined }, { source: "test" });
+    expect(getTask(t.id)!.run?.question).toBeUndefined();
+    // the key must be gone from the file, not serialized as null
+    const raw = fs.readFileSync(path.join(process.env.COLLIE_HOME!, "tasks", `${t.id}.md`), "utf8");
+    expect(raw).not.toContain("question:");
+  });
+
   test("listTasks sorts by priority then queuedAt", () => {
     const a = createTask({ title: "a", repo: "/tmp", prompt: "p", priority: 200, status: "queued" });
     const b = createTask({ title: "b", repo: "/tmp", prompt: "p", priority: 10, status: "queued" });

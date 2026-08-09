@@ -23,9 +23,22 @@ export function planTick(ctx: DispatcherCtx, now = new Date()): TickPlan {
     return { mode, decision: `limit hit earlier; blocked until ${hardStop.toLocaleString()}` };
   }
 
-  const wip = listTasks({ status: ["running", "blocked"] }).length;
+  // WIP is work in flight only: a task blocked on a question consumes no tokens
+  // and no attention until morning, so counting it would let one stuck pane
+  // starve the whole night.
+  const wip = listTasks({ status: ["running"] }).length;
   if (wip >= ctx.config.dispatch.wipLimit) {
     return { mode, decision: `wip full (${wip}/${ctx.config.dispatch.wipLimit})` };
+  }
+
+  // Blocked tasks are still a backstop: past this many unanswered questions the
+  // night has gone sideways and more dispatches just add to the pile.
+  const asking = listTasks({ status: ["blocked"] }).length;
+  if (asking >= ctx.config.dispatch.askingLimit) {
+    return {
+      mode,
+      decision: `asking limit (${asking}/${ctx.config.dispatch.askingLimit}) — answer questions in the TUI`,
+    };
   }
 
   const cap = ctx.config.quota.conservativeMaxSize;

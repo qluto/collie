@@ -5,6 +5,7 @@ describe("config", () => {
   test("default template parses to expected values", () => {
     const c = parseConfig(DEFAULT_CONFIG_TOML);
     expect(c.dispatch.wipLimit).toBe(2);
+    expect(c.dispatch.askingLimit).toBe(3);
     expect(c.schedule.windows).toEqual([{ start: "00:00", end: "07:00", mode: "full" }]);
     expect(c.schedule.defaultMode).toBe("conservative");
     expect(c.quota.sizeEstimateTokens.M).toBe(8_000_000);
@@ -36,6 +37,9 @@ describe("config", () => {
 
   test("invalid values rejected", () => {
     expect(() => parseConfig(`[dispatch]\nwip_limit = 0\n`)).toThrow(ConfigError);
+    expect(() => parseConfig(`[dispatch]\nasking_limit = 99\n`)).toThrow(ConfigError);
+    // 0 would make `asking >= askingLimit` fire with zero blocked tasks — permanent pause
+    expect(() => parseConfig(`[dispatch]\nasking_limit = 0\n`)).toThrow(ConfigError);
     expect(() => parseConfig(`[schedule]\ndefault_mode = "turbo"\n`)).toThrow(ConfigError);
     expect(() => parseConfig(`[[schedule.windows]]\nstart = "25:00"\nend = "07:00"\nmode = "full"\n`)).toThrow(ConfigError);
     expect(() => parseConfig(`not toml [`)).toThrow(ConfigError);

@@ -412,3 +412,16 @@ Live, in a herdr pane forced to 44 columns with `stty cols 44 rows 20`
 
 Widest rendered line: 34 cells (board) / 43 (detail), both inside 44.
 Tests assert no frame exceeds its row budget at 6/8/12/20 rows.
+
+# collie refocus — 昼に投函・夜に burn-down・朝に収穫
+
+Plan: /Users/qluto/.claude/plans/flickering-singing-mango.md
+実装 = Opus サブエージェント / 最終レビュー = Fable（メインセッション）
+
+- [x] Stage 1 — 質問ハーベスト + WIP修正（run.question, asking_limit, WIP=running のみ）
+- [ ] Stage 2 — 収穫ビュー（harvest.tsx 新デフォルトタブ, answer.ts, diffSummary）
+- [ ] Stage 3 — 予算予報ヘッダー（forecast.ts, dashboard 削除）
+- [ ] Stage 4 — 捕獲の軽量化（newTask 3ステップ, 即 queued）
+- [ ] Stage 5 — 軸削除（defer/backlog 廃止, done アーカイブ, Asking 表記）※pre-flight: ライブ backlog triage
+- [ ] Stage 6 — burn-down クォータモード（effectiveSessionFraction）
+- [ ] Stage 7 — presence 検出（ioreg HIDIdleTime, default off）
