@@ -422,6 +422,6 @@ Plan: /Users/qluto/.claude/plans/flickering-singing-mango.md
 - [x] Stage 2 — 収穫ビュー（harvest.tsx 新デフォルトタブ, answer.ts, diffSummary）
 - [x] Stage 3 — 予算予報ヘッダー（forecast.ts, dashboard 削除）
 - [x] Stage 4 — 捕獲の軽量化（newTask 3ステップ, 即 queued）
-- [ ] Stage 5 — 軸削除（defer/backlog 廃止, done アーカイブ, Asking 表記）※pre-flight: ライブ backlog triage
+- [x] Stage 5 — 軸削除（defer/backlog 廃止, done アーカイブ, Asking 表記）※pre-flight済: ライブ backlog 0件
 - [ ] Stage 6 — burn-down クォータモード（effectiveSessionFraction）
 - [ ] Stage 7 — presence 検出（ioreg HIDIdleTime, default off）

@@ -1,7 +1,8 @@
 import * as fs from "node:fs";
 import { parseArgs } from "node:util";
 import {
-  commitsAhead, deleteMergedBranch, dirtyFiles, listTasks, mergedBranches, removeWorktree,
+  archivedTaskFilePath, commitsAhead, deleteMergedBranch, dirtyFiles, ensureDataDirs, listTasks,
+  mergedBranches, removeWorktree, taskFilePath, withLock,
   type Task,
 } from "@collie/core";
 
@@ -19,7 +20,8 @@ interface Verdict {
  * `git branch -d` refuses anything else, which is the real safety net here.
  */
 function collect(dryRun: boolean): Verdict[] {
-  const finished = listTasks({ status: ["done", "failed"] }).filter((t) => t.worktree && t.branch);
+  const finished = listTasks({ status: ["done", "failed"], includeArchived: true })
+    .filter((t) => t.worktree && t.branch);
   const mergedByRepo = new Map<string, Set<string>>();
   const merged = (repo: string) => {
     if (!mergedByRepo.has(repo)) mergedByRepo.set(repo, new Set(mergedBranches(repo)));
@@ -64,12 +66,29 @@ function collect(dryRun: boolean): Verdict[] {
   });
 }
 
+/**
+ * Done tasks are archived by `transition` now, but files finished before that
+ * change are still sitting in the working set. Sweep them on the way past.
+ */
+function sweepDoneIntoArchive(dryRun: boolean): string[] {
+  ensureDataDirs();
+  return withLock(() =>
+    listTasks({ status: ["done"] }).flatMap((t) => {
+      if (!fs.existsSync(taskFilePath(t.id))) return []; // already archived
+      if (dryRun) return [`would archive ${t.id}`];
+      fs.renameSync(taskFilePath(t.id), archivedTaskFilePath(t.id));
+      return [`archived ${t.id}`];
+    }),
+  );
+}
+
 /** `collie gc [--dry-run]` — drop worktrees and merged branches of finished tasks. */
 export function runGcCommand(argv: string[]): number {
   const { values } = parseArgs({
     args: argv,
     options: { "dry-run": { type: "boolean", default: false } },
   });
+  for (const line of sweepDoneIntoArchive(values["dry-run"]!)) console.log(`✓ ${line}`);
   const verdicts = collect(values["dry-run"]!);
   if (verdicts.length === 0) {
     console.log("nothing to collect (no finished worktree tasks)");

@@ -10,12 +10,11 @@ const USAGE = `collie — task queue for Claude Code sessions on Herdr
 
 Usage:
   collie task add --repo <path> --title <t> [--size S|M|L] [--priority N]
-                     [--defer]                   (not urgent: full windows only)
                      [--no-worktree] [--permission-mode <m>]
                      [--prompt <text>]           (omit --prompt to open $EDITOR)
   collie task list [--status s1,s2] [--json]
   collie task show <id>
-  collie task queue|backlog|retry|cancel|done <id>
+  collie task queue|retry|cancel|done <id>
   collie task complete <id> --summary "<text>"
   collie task fail <id> --reason "<text>" [--retryable]
   collie done [<id>] [--close]   # review -> done; id defaults to the task

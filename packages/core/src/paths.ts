@@ -46,8 +46,17 @@ export function lockPath(): string {
   return path.join(hubHome(), "lock");
 }
 
+/** Finished tasks move here so the working set stays what still needs a human. */
+export function archiveDir(): string {
+  return path.join(tasksDir(), "archive");
+}
+
 export function taskFilePath(id: string): string {
   return path.join(tasksDir(), `${id}.md`);
+}
+
+export function archivedTaskFilePath(id: string): string {
+  return path.join(archiveDir(), `${id}.md`);
 }
 
 /** Expand a leading ~ to the user's home directory. */
@@ -59,7 +68,7 @@ export function expandTilde(p: string): string {
 
 /** Create the runtime directory tree if missing. Safe to call repeatedly. */
 export function ensureDataDirs(): void {
-  for (const dir of [hubHome(), tasksDir(), runsDir(), logsDir()]) {
+  for (const dir of [hubHome(), tasksDir(), archiveDir(), runsDir(), logsDir()]) {
     fs.mkdirSync(dir, { recursive: true });
   }
 }

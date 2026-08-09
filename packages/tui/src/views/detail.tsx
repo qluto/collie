@@ -21,7 +21,6 @@ export function Detail(props: { task: Task; columns?: number; rows?: number }): 
     ["repo", narrow ? task.repo.split("/").at(-1) : task.repo],
     ["priority", String(task.priority)],
     ["size", task.size],
-    ["defer", task.defer ? "yes (full windows only)" : undefined],
     ["worktree", task.worktree ? task.branch ?? "yes" : "no"],
     ["permission", task.permissionMode],
     ["attempts", `${task.attempts}/${task.maxAttempts}`],

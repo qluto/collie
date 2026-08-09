@@ -127,10 +127,9 @@ function App(): React.JSX.Element {
   const [overlay, setOverlay] = useState<Overlay>({ kind: "none" });
   // pause background refresh while a text field owns the hardware cursor
   const [snap, refresh] = useHubSnapshot(overlay.kind === "new" || overlay.kind === "answer");
-  const [focusCol, setFocusCol] = useState(1); // start on Queued
+  const [focusCol, setFocusCol] = useState(0); // start on Queued
   const [focusRow, setFocusRow] = useState(0);
   const [focusIdx, setFocusIdx] = useState(0); // harvest list cursor
-  const [showFailed, setShowFailed] = useState(false);
   const [limits, setLimits] = useState<LimitSnapshot | null>(null);
   const [flash, setFlash] = useState("");
   const [rows, setRows] = useState(process.stdout.rows ?? 24);
@@ -176,8 +175,7 @@ function App(): React.JSX.Element {
     setTimeout(() => setFlash(""), 3000);
   };
 
-  const focusedTask = (): Task | undefined =>
-    columnTasks(snap.tasks, focusCol, showFailed)[focusRow];
+  const focusedTask = (): Task | undefined => columnTasks(snap.tasks, focusCol)[focusRow];
 
   const act = (fn: () => void) => {
     try {
@@ -214,7 +212,6 @@ function App(): React.JSX.Element {
           repo: draft.repo,
           prompt,
           size: draft.size,
-          status: "queued",
         },
         { source: "tui" },
       );
@@ -257,9 +254,10 @@ function App(): React.JSX.Element {
     }
     if (overlay.kind === "confirm-cancel") {
       if (input === "y") {
+        const queued = snap.tasks.find((t) => t.id === overlay.taskId)?.status === "queued";
         act(() => cancelTask(overlay.taskId, { source: "tui" }));
         setOverlay({ kind: "none" });
-        flashMsg("cancelled (pane left alive for inspection)");
+        flashMsg(queued ? `deleted ${overlay.taskId}` : "cancelled (pane left alive for inspection)");
       } else if (key.escape || input === "n") setOverlay({ kind: "none" });
       return;
     }
@@ -303,7 +301,7 @@ function App(): React.JSX.Element {
         act(() => retryTask(task.id, { source: "tui" }));
       }
     } else if (tab === "board") {
-      const items = columnTasks(snap.tasks, focusCol, showFailed);
+      const items = columnTasks(snap.tasks, focusCol);
       const task = focusedTask();
       if (input === "h" || key.leftArrow) {
         setFocusCol((c) => Math.max(0, c - 1));
@@ -315,34 +313,21 @@ function App(): React.JSX.Element {
         setFocusRow((r) => Math.min(Math.max(items.length - 1, 0), r + 1));
       } else if (input === "k" || key.upArrow) {
         setFocusRow((r) => Math.max(0, r - 1));
-      } else if (input === "f") {
-        setShowFailed((f) => !f);
-        if (focusCol === 5) setFocusRow(0);
       } else if (input === "n") {
         setOverlay({ kind: "new" });
       } else if (key.return && task) {
         setOverlay({ kind: "detail", taskId: task.id });
-      } else if (input === " " && task) {
-        if (task.status === "backlog") act(() => transition(task.id, "queued", undefined, { source: "tui" }));
-        else if (task.status === "queued") act(() => transition(task.id, "backlog", undefined, { source: "tui" }));
-      } else if (input === "e" && task && (task.status === "backlog" || task.status === "queued")) {
+      } else if (input === "e" && task && task.status === "queued") {
         openPromptEditor(task);
-      } else if (input === "D" && task && (task.status === "backlog" || task.status === "queued")) {
-        act(() => {
-          const next = updateTask(task.id, (t) => {
-            t.defer = !t.defer;
-          });
-          flashMsg(next.defer ? `${next.id} deferred (full windows only)` : `${next.id} dispatchable anytime`);
-        });
       } else if (input === "d" && task?.status === "review") {
         act(() => transition(task.id, "done", undefined, { source: "tui" }));
       } else if (input === "r" && task && (task.status === "review" || task.status === "failed")) {
         act(() => retryTask(task.id, { source: "tui" }));
-      } else if (input === "x" && task && task.status !== "done") {
+      } else if (input === "x" && task) {
         setOverlay({ kind: "confirm-cancel", taskId: task.id });
       } else if ((input === "J" || input === "K") && task?.status === "queued") {
         act(() => {
-          const queued = columnTasks(snap.tasks, 1, false);
+          const queued = columnTasks(snap.tasks, 0);
           const idx = queued.findIndex((t) => t.id === task.id);
           const swapWith = queued[input === "J" ? idx + 1 : idx - 1];
           if (!swapWith) return;
@@ -446,14 +431,17 @@ function App(): React.JSX.Element {
           questionFor={questionFor}
         />
       ) : tab === "board" ? (
-        <Board tasks={snap.tasks} focusCol={focusCol} focusRow={focusRow} showFailed={showFailed} now={snap.refreshedAt} columns={columns} rows={bodyRows} />
+        <Board tasks={snap.tasks} focusCol={focusCol} focusRow={focusRow} now={snap.refreshedAt} columns={columns} rows={bodyRows} />
       ) : (
         <ConfigView />
       )}
       {overlay.kind === "confirm-cancel" && (
         <Box borderStyle="round" borderColor="red" paddingX={1}>
           <Text>
-            cancel {overlay.taskId}? running panes are left alive. <Text bold>y</Text>/n
+            {snap.tasks.find((t) => t.id === overlay.taskId)?.status === "queued"
+              ? `delete queued task ${overlay.taskId}? `
+              : `cancel ${overlay.taskId}? running panes are left alive. `}
+            <Text bold>y</Text>/n
           </Text>
         </Box>
       )}

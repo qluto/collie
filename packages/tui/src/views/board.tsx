@@ -4,23 +4,23 @@ import type { Task } from "@collie/core";
 import type { TaskStatus } from "@collie/core";
 import { truncateToWidth, wrapToWidth } from "../cursor.ts";
 
+/** Done is not a lane: a completed task is archived out of the working set. */
 export const COLUMNS: Array<{ title: string; statuses: TaskStatus[] }> = [
-  { title: "Backlog", statuses: ["backlog"] },
   { title: "Queued", statuses: ["queued"] },
   { title: "Running", statuses: ["running"] },
-  { title: "Blocked", statuses: ["blocked"] },
+  { title: "Asking", statuses: ["blocked"] },
   { title: "Review", statuses: ["review"] },
-  { title: "Done", statuses: ["done"] }, // toggles to failed via 'f'
+  { title: "Failed", statuses: ["failed"] },
 ];
 
-// Six columns across a normal terminal leave ~14 cells each — too narrow for a
+// Five columns across a normal terminal leave ~15 cells each — too narrow for a
 // Japanese title. The focused column takes FOCUS_SHARE of the row instead, so
 // whatever the cursor is on is actually readable.
 const FOCUS_SHARE = 3;
 const MAX_FOCUS = 56;
 
-export function columnTasks(tasks: Task[], col: number, showFailed: boolean): Task[] {
-  const statuses = col === 5 && showFailed ? (["failed"] as TaskStatus[]) : COLUMNS[col]!.statuses;
+export function columnTasks(tasks: Task[], col: number): Task[] {
+  const statuses = COLUMNS[col]!.statuses;
   return tasks.filter((t) => statuses.includes(t.status));
 }
 
@@ -37,7 +37,7 @@ function metaLine(t: Task, now: number): string {
   const repo = t.repo.split("/").at(-1) ?? "";
   return [
     `p${t.priority}`,
-    `${t.size}${t.defer ? "☾" : ""}`,
+    t.size,
     repo,
     t.run?.failureReason ? `!${t.run.failureReason.split(":")[0]}` : "",
   ]
@@ -67,7 +67,7 @@ function Card(props: { task: Task; selected: boolean; width: number; now: number
 }
 
 /**
- * Below this many columns six side-by-side lanes cannot hold a readable title
+ * Below this many columns five side-by-side lanes cannot hold a readable title
  * even with the accordion, so the board stacks them instead. Sized for a phone
  * terminal (herdr's own mobile layout kicks in around 64).
  */
@@ -83,16 +83,15 @@ function StackedBoard(props: {
   tasks: Task[];
   focusCol: number;
   focusRow: number;
-  showFailed: boolean;
   now: number;
   width: number;
   rows: number;
 }): React.JSX.Element {
-  const { tasks, focusCol, focusRow, showFailed, now, width, rows } = props;
+  const { tasks, focusCol, focusRow, now, width, rows } = props;
   const lanes = COLUMNS.map((col, ci) => ({
     ci,
-    title: ci === 5 && showFailed ? "Failed" : col.title,
-    items: columnTasks(tasks, ci, showFailed),
+    title: col.title,
+    items: columnTasks(tasks, ci),
     focused: ci === focusCol,
   })).filter((l) => l.items.length > 0 || l.focused);
 
@@ -172,14 +171,13 @@ export function Board(props: {
   tasks: Task[];
   focusCol: number;
   focusRow: number;
-  showFailed: boolean;
   now: number;
   /** terminal columns; the card text is laid out against this */
   columns?: number;
   /** terminal rows available to the board; only used by the stacked layout */
   rows?: number;
 }): React.JSX.Element {
-  const { tasks, focusCol, focusRow, showFailed, now } = props;
+  const { tasks, focusCol, focusRow, now } = props;
   // Column boxes get explicit widths rather than flexGrow: the card text is
   // truncated by us (Ink miscounts CJK), so the layout must not be free to
   // round differently than this arithmetic did.
@@ -190,7 +188,6 @@ export function Board(props: {
         tasks={tasks}
         focusCol={focusCol}
         focusRow={focusRow}
-        showFailed={showFailed}
         now={now}
         width={total}
         rows={props.rows ?? process.stdout.rows ?? 24}
@@ -210,8 +207,7 @@ export function Board(props: {
   return (
     <Box flexGrow={1} gap={1}>
       {COLUMNS.map((col, ci) => {
-        const items = columnTasks(tasks, ci, showFailed);
-        const title = ci === 5 && showFailed ? "Failed" : col.title;
+        const items = columnTasks(tasks, ci);
         const focused = ci === focusCol;
         const boxWidth = widthFor(ci);
         const width = boxWidth - 3; // 2 border cells + the card's left padding
@@ -226,7 +222,7 @@ export function Board(props: {
           >
             <Text bold color={focused ? "cyan" : undefined} wrap="truncate">
               {/* the count is the scanning signal: truncate the name, never the number */}
-              {` ${truncateToWidth(title, Math.max(3, boxWidth - 4 - String(items.length).length))} ${items.length}`}
+              {` ${truncateToWidth(col.title, Math.max(3, boxWidth - 4 - String(items.length).length))} ${items.length}`}
             </Text>
             {items.map((t, ri) => (
               <Card key={t.id} task={t} selected={focused && ri === focusRow} width={width} now={now} />

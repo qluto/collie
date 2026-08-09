@@ -58,22 +58,18 @@ describe("sizeFits", () => {
 describe("modeAdmits", () => {
   const cap = quota.conservativeMaxSize; // "M"
 
-  test("full takes everything, including deferred and oversized", () => {
-    expect(modeAdmits({ defer: true, size: "L" }, "full", cap)).toBe(true);
+  test("full takes everything, including oversized", () => {
+    expect(modeAdmits({ size: "L" }, "full", cap)).toBe(true);
   });
 
   test("paused takes nothing", () => {
-    expect(modeAdmits({ defer: false, size: "S" }, "paused", cap)).toBe(false);
+    expect(modeAdmits({ size: "S" }, "paused", cap)).toBe(false);
   });
 
-  test("conservative skips deferred tasks regardless of size", () => {
-    expect(modeAdmits({ defer: false, size: "S" }, "conservative", cap)).toBe(true);
-    expect(modeAdmits({ defer: true, size: "S" }, "conservative", cap)).toBe(false);
-  });
-
-  test("conservative still applies the size cap to non-deferred tasks", () => {
-    expect(modeAdmits({ defer: false, size: "M" }, "conservative", cap)).toBe(true);
-    expect(modeAdmits({ defer: false, size: "L" }, "conservative", cap)).toBe(false);
+  test("conservative applies the size cap", () => {
+    expect(modeAdmits({ size: "S" }, "conservative", cap)).toBe(true);
+    expect(modeAdmits({ size: "M" }, "conservative", cap)).toBe(true);
+    expect(modeAdmits({ size: "L" }, "conservative", cap)).toBe(false);
   });
 });
 

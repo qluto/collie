@@ -27,16 +27,16 @@ export function sizeFits(size: TaskSize, max: TaskSize): boolean {
 /**
  * Whether a schedule mode will even consider a task, before any token math.
  * `full` takes everything; `conservative` keeps the daytime budget for the
- * human by skipping oversized tasks and anything the author marked `defer`.
+ * human by skipping oversized tasks.
  */
 export function modeAdmits(
-  task: Pick<Task, "defer" | "size">,
+  task: Pick<Task, "size">,
   mode: ScheduleMode,
   conservativeMaxSize: TaskSize,
 ): boolean {
   if (mode === "paused") return false;
   if (mode === "full") return true;
-  return !task.defer && sizeFits(task.size, conservativeMaxSize);
+  return sizeFits(task.size, conservativeMaxSize);
 }
 
 const fmtM = (n: number) => `${(n / 1e6).toFixed(1)}M`;

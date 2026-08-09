@@ -52,7 +52,7 @@ describe("NewTaskForm", () => {
     expect(frame).toContain("h/l size · Enter creates & opens $EDITOR");
   });
 
-  test("no step ever asks about defer, worktree, permission or queueing", async () => {
+  test("no step ever asks about worktree, permission or queueing", async () => {
     const app = render(<NewTaskForm knownRepos={REPOS} onSubmit={() => {}} onCancel={() => {}} />);
     const seen: string[] = [app.lastFrame()!];
     for (const chunk of ["two", "\r", "fix the parser", "\r"]) {
@@ -62,7 +62,7 @@ describe("NewTaskForm", () => {
     app.unmount();
     for (const frame of seen) {
       const text = strip(frame).toLowerCase();
-      for (const word of ["defer", "permission", "worktree", "queue now"]) {
+      for (const word of ["permission", "worktree", "queue now"]) {
         expect(text).not.toContain(word);
       }
     }

@@ -34,7 +34,7 @@ function editorPrompt(initial: string): string {
 
 function fmtTask(t: Task): string {
   const wip = t.status === "running" || t.status === "blocked" ? "*" : " ";
-  return `${wip} ${t.id}  ${t.status.padEnd(8)} p${String(t.priority).padEnd(4)} ${t.size}${t.defer ? "☾" : " "} ${path.basename(t.repo).padEnd(20)} ${t.title}`;
+  return `${wip} ${t.id}  ${t.status.padEnd(8)} p${String(t.priority).padEnd(4)} ${t.size} ${path.basename(t.repo).padEnd(20)} ${t.title}`;
 }
 
 export function runTaskCommand(argv: string[]): number {
@@ -49,7 +49,6 @@ export function runTaskCommand(argv: string[]): number {
           prompt: { type: "string" },
           size: { type: "string", default: "M" },
           priority: { type: "string", default: "100" },
-          defer: { type: "boolean", default: false },
           "no-worktree": { type: "boolean", default: false },
           "permission-mode": { type: "string" },
         },
@@ -72,11 +71,8 @@ export function runTaskCommand(argv: string[]): number {
         prompt,
         size: values.size as TaskSize,
         priority: Number(values.priority),
-        defer: values.defer,
         worktree: values["no-worktree"] ? false : undefined,
         permissionMode: values["permission-mode"] as PermissionMode | undefined,
-        // an added task is a queued task; createTask's own default is backlog
-        status: "queued",
       });
       console.log(`created ${task.id} (${task.status})`);
       return 0;
@@ -86,10 +82,9 @@ export function runTaskCommand(argv: string[]): number {
         args: rest,
         options: { status: { type: "string" }, json: { type: "boolean", default: false } },
       });
-      const filter = values.status
-        ? { status: values.status.split(",") as TaskStatus[] }
-        : undefined;
-      const tasks = listTasks(filter);
+      const status = values.status?.split(",") as TaskStatus[] | undefined;
+      // done tasks live in the archive; only an explicit --status done digs there
+      const tasks = listTasks(status ? { status, includeArchived: status.includes("done") } : undefined);
       if (values.json) {
         console.log(JSON.stringify(tasks, null, 2));
       } else {
@@ -108,11 +103,6 @@ export function runTaskCommand(argv: string[]): number {
       console.log(`${t.id} -> queued`);
       return 0;
     }
-    case "backlog": {
-      const t = transition(requireTask(rest[0]).id, "backlog", undefined, { source: "cli" });
-      console.log(`${t.id} -> backlog`);
-      return 0;
-    }
     case "retry": {
       const next = retryTask(requireTask(rest[0]).id, { source: "cli" });
       console.log(`${next.id} -> queued (attempts reset, 0/${next.maxAttempts})`);
@@ -124,8 +114,10 @@ export function runTaskCommand(argv: string[]): number {
       return 0;
     }
     case "cancel": {
-      const t = cancelTask(requireTask(rest[0]).id, { source: "cli" });
-      console.log(`${t.id} -> ${t.status}`);
+      const before = requireTask(rest[0]);
+      const t = cancelTask(before.id, { source: "cli" });
+      // a queued task is deleted outright, so its "new status" is nothing
+      console.log(before.status === "queued" ? `${t.id} deleted` : `${t.id} -> ${t.status}`);
       return 0;
     }
     case "complete": {

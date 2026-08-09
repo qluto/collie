@@ -13,7 +13,7 @@ function freshHome(): string {
 // Import lazily after COLLIE_HOME is set per-test (paths read env dynamically,
 // so a single static import is fine as long as env is set before calls).
 import {
-  createTask, getTask, listTasks, transition, updateTask, cancelTask,
+  createTask, deleteTask, getTask, listTasks, transition, updateTask, cancelTask,
   markDone, parseTaskFile, retryTask, serializeTask, tailEvents, IllegalTransitionError,
 } from "../src/index.ts";
 
@@ -33,7 +33,8 @@ describe("store basics", () => {
     const got = getTask(t.id);
     expect(got).not.toBeNull();
     expect(got!.title).toBe("Test task");
-    expect(got!.status).toBe("backlog");
+    expect(got!.status).toBe("queued"); // tossed in = will run
+    expect(got!.queuedAt).toBeDefined();
     expect(got!.size).toBe("S");
     expect(got!.priority).toBe(5);
     expect(got!.prompt).toBe("Do the thing.\n\nWith **markdown**.\n");
@@ -42,7 +43,7 @@ describe("store basics", () => {
   });
 
   test("markDone: review -> done, running routes through review, idempotent", () => {
-    const reviewed = createTask({ title: "a", repo: "/tmp", prompt: "p", status: "queued" });
+    const reviewed = createTask({ title: "a", repo: "/tmp", prompt: "p" });
     transition(reviewed.id, "running");
     transition(reviewed.id, "review", { resultSummary: "did it" });
     expect(markDone(reviewed.id).status).toBe("done");
@@ -51,19 +52,19 @@ describe("store basics", () => {
 
     // the human at the pane knows the session is finished even if it never
     // called back: running -> review -> done in one step
-    const running = createTask({ title: "b", repo: "/tmp", prompt: "p", status: "queued" });
+    const running = createTask({ title: "b", repo: "/tmp", prompt: "p" });
     transition(running.id, "running");
     expect(markDone(running.id).status).toBe("done");
     expect(tailEvents(10, running.id).map((e) => e.to)).toEqual(["queued", "running", "review", "done"]);
   });
 
   test("markDone refuses tasks that were never dispatched", () => {
-    const queued = createTask({ title: "c", repo: "/tmp", prompt: "p", status: "queued" });
+    const queued = createTask({ title: "c", repo: "/tmp", prompt: "p" });
     expect(() => markDone(queued.id)).toThrow(/is queued/);
   });
 
   test("retryTask restores a full attempt budget", () => {
-    const t = createTask({ title: "a", repo: "/tmp", prompt: "p", status: "queued" });
+    const t = createTask({ title: "a", repo: "/tmp", prompt: "p" });
     updateTask(t.id, (task) => {
       task.attempts = task.maxAttempts;
     });
@@ -73,23 +74,14 @@ describe("store basics", () => {
     expect(next.attempts).toBe(0);
   });
 
-  test("defer defaults to false and survives a round-trip", () => {
-    const plain = createTask({ title: "a", repo: "/tmp", prompt: "p" });
-    expect(getTask(plain.id)!.defer).toBe(false);
-    const deferred = createTask({ title: "b", repo: "/tmp", prompt: "p", defer: true });
-    expect(getTask(deferred.id)!.defer).toBe(true);
-    expect(parseTaskFile(serializeTask(deferred), "mem").defer).toBe(true);
-  });
-
-  test("task files written before defer existed parse as not-deferred", () => {
-    const legacy = `---
+  const legacyFile = (extra: string) => `---
 id: t-20260101-aaaa
 title: legacy
 status: backlog
 repo: /tmp
 priority: 100
 size: M
-worktree: false
+${extra}worktree: false
 permissionMode: acceptEdits
 createdAt: 2026-01-01T00:00:00.000Z
 updatedAt: 2026-01-01T00:00:00.000Z
@@ -98,13 +90,32 @@ maxAttempts: 2
 rev: 0
 ---
 body`;
-    expect(parseTaskFile(legacy, "mem").defer).toBe(false);
+
+  test("a pre-refocus backlog file parses as queued", () => {
+    expect(parseTaskFile(legacyFile(""), "mem").status).toBe("queued");
+  });
+
+  test("a leftover defer: line never survives the next write", () => {
+    const parsed = parseTaskFile(legacyFile("defer: true\n"), "mem");
+    expect((parsed as unknown as Record<string, unknown>).defer).toBeUndefined();
+    expect(serializeTask(parsed)).not.toContain("defer:");
+
+    // and on disk: one updateTask is enough to drop it
+    fs.mkdirSync(path.join(process.env.COLLIE_HOME!, "tasks"), { recursive: true });
+    fs.writeFileSync(path.join(process.env.COLLIE_HOME!, "tasks", "t-20260101-aaaa.md"),
+      legacyFile("defer: true\n"));
+    updateTask("t-20260101-aaaa", (t) => {
+      t.priority = 1;
+    });
+    const raw = fs.readFileSync(
+      path.join(process.env.COLLIE_HOME!, "tasks", "t-20260101-aaaa.md"), "utf8");
+    expect(raw).not.toContain("defer:");
+    expect(raw).toContain("status: queued");
   });
 
   test("serialize/parse round-trip with run sub-object", () => {
     const t = createTask({ title: "x", repo: "/tmp", prompt: "body" });
-    const withRun = transition(t.id, "queued", undefined, { source: "test" });
-    const started = transition(withRun.id, "running", { paneId: "w1:p2", sessionId: "abc" }, { source: "test" });
+    const started = transition(t.id, "running", { paneId: "w1:p2", sessionId: "abc" }, { source: "test" });
     const reparsed = parseTaskFile(serializeTask(started), "mem");
     expect(reparsed.run?.paneId).toBe("w1:p2");
     expect(reparsed.run?.sessionId).toBe("abc");
@@ -112,7 +123,7 @@ body`;
   });
 
   test("run.question persists, and an explicit undefined patch clears it", () => {
-    const t = createTask({ title: "q", repo: "/tmp", prompt: "p", status: "queued" });
+    const t = createTask({ title: "q", repo: "/tmp", prompt: "p" });
     transition(t.id, "running", undefined, { source: "test" });
     transition(t.id, "blocked", { question: "Which migration should I run?" }, { source: "test" });
     expect(getTask(t.id)!.run?.question).toBe("Which migration should I run?");
@@ -125,9 +136,9 @@ body`;
   });
 
   test("listTasks sorts by priority then queuedAt", () => {
-    const a = createTask({ title: "a", repo: "/tmp", prompt: "p", priority: 200, status: "queued" });
-    const b = createTask({ title: "b", repo: "/tmp", prompt: "p", priority: 10, status: "queued" });
-    const c = createTask({ title: "c", repo: "/tmp", prompt: "p", priority: 10, status: "queued" });
+    const a = createTask({ title: "a", repo: "/tmp", prompt: "p", priority: 200 });
+    const b = createTask({ title: "b", repo: "/tmp", prompt: "p", priority: 10 });
+    const c = createTask({ title: "c", repo: "/tmp", prompt: "p", priority: 10 });
     // same-priority order is by queuedAt; same-ms creation makes it ambiguous,
     // so set explicit timestamps
     updateTask(b.id, (t) => {
@@ -144,18 +155,19 @@ body`;
 
   test("journal records transitions", () => {
     const t = createTask({ title: "j", repo: "/tmp", prompt: "p" });
-    transition(t.id, "queued", undefined, { source: "test" });
+    transition(t.id, "running", undefined, { source: "test" });
     const events = tailEvents(10, t.id);
     expect(events.length).toBe(2);
-    expect(events[1]!.from).toBe("backlog");
-    expect(events[1]!.to).toBe("queued");
+    expect(events[0]!.from).toBe(null);
+    expect(events[0]!.to).toBe("queued");
+    expect(events[1]!.from).toBe("queued");
+    expect(events[1]!.to).toBe("running");
   });
 });
 
 describe("transitions", () => {
-  test("legal path backlog→queued→running→review→done", () => {
+  test("legal path queued→running→review→done", () => {
     const t = createTask({ title: "x", repo: "/tmp", prompt: "p" });
-    transition(t.id, "queued");
     transition(t.id, "running");
     transition(t.id, "review", { resultSummary: "did it" });
     const done = transition(t.id, "done");
@@ -166,9 +178,8 @@ describe("transitions", () => {
 
   test("illegal transitions throw", () => {
     const t = createTask({ title: "x", repo: "/tmp", prompt: "p" });
-    expect(() => transition(t.id, "running")).toThrow(IllegalTransitionError);
     expect(() => transition(t.id, "done")).toThrow(IllegalTransitionError);
-    transition(t.id, "queued");
+    expect(() => transition(t.id, "review")).toThrow(IllegalTransitionError);
     transition(t.id, "running");
     expect(() => transition(t.id, "done")).toThrow(IllegalTransitionError);
   });
@@ -187,14 +198,66 @@ describe("transitions", () => {
     expect(u.priority).toBe(1);
   });
 
-  test("cancel semantics", () => {
-    const q = createTask({ title: "q", repo: "/tmp", prompt: "p", status: "queued" });
-    expect(cancelTask(q.id).status).toBe("backlog");
-    const r = createTask({ title: "r", repo: "/tmp", prompt: "p", status: "queued" });
+  test("cancel semantics: a queued task is deleted, a live one is failed", () => {
+    const q = createTask({ title: "q", repo: "/tmp", prompt: "p" });
+    cancelTask(q.id);
+    expect(getTask(q.id)).toBeNull();
+    const r = createTask({ title: "r", repo: "/tmp", prompt: "p" });
     transition(r.id, "running");
     const cancelled = cancelTask(r.id);
     expect(cancelled.status).toBe("failed");
     expect(cancelled.run?.failureReason).toBe("cancelled");
+  });
+
+  test("deleteTask removes the file and journals it", () => {
+    const t = createTask({ title: "oops", repo: "/tmp", prompt: "p" });
+    deleteTask(t.id, { source: "test" });
+    expect(fs.existsSync(path.join(process.env.COLLIE_HOME!, "tasks", `${t.id}.md`))).toBe(false);
+    expect(getTask(t.id)).toBeNull();
+    expect(listTasks().map((x) => x.id)).not.toContain(t.id);
+    const last = tailEvents(10, t.id).at(-1)!;
+    expect(last.from).toBe("queued");
+    expect(last.to).toBe("deleted");
+    expect(() => deleteTask(t.id)).toThrow(/no such task/);
+  });
+});
+
+describe("archiving", () => {
+  const livePath = (id: string) => path.join(process.env.COLLIE_HOME!, "tasks", `${id}.md`);
+  const archivedPath = (id: string) => path.join(process.env.COLLIE_HOME!, "tasks", "archive", `${id}.md`);
+
+  test("done moves the task out of the working set but keeps it readable", () => {
+    const t = createTask({ title: "x", repo: "/tmp", prompt: "p" });
+    transition(t.id, "running");
+    transition(t.id, "review", { resultSummary: "did it" });
+    transition(t.id, "done");
+
+    expect(fs.existsSync(livePath(t.id))).toBe(false);
+    expect(fs.existsSync(archivedPath(t.id))).toBe(true);
+    // the archived file is the FINAL content, not the pre-transition one
+    expect(fs.readFileSync(archivedPath(t.id), "utf8")).toContain("status: done");
+
+    expect(listTasks().map((x) => x.id)).not.toContain(t.id);
+    expect(listTasks({ includeArchived: true }).map((x) => x.id)).toContain(t.id);
+    expect(getTask(t.id)!.status).toBe("done");
+  });
+
+  test("a half-migrated home lists the task once, from the live file", () => {
+    const t = createTask({ title: "z", repo: "/tmp", prompt: "p" });
+    transition(t.id, "running");
+    transition(t.id, "review");
+    transition(t.id, "done");
+    // pre-upgrade leftover: the same task still sitting in the working set
+    fs.copyFileSync(archivedPath(t.id), livePath(t.id));
+    const listed = listTasks({ includeArchived: true }).filter((x) => x.id === t.id);
+    expect(listed.length).toBe(1);
+  });
+
+  test("markDone stays idempotent across the archive move", () => {
+    const t = createTask({ title: "y", repo: "/tmp", prompt: "p" });
+    transition(t.id, "running");
+    expect(markDone(t.id).status).toBe("done");
+    expect(markDone(t.id).status).toBe("done"); // reads the archived file
   });
 });
 

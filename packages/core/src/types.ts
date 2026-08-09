@@ -1,5 +1,4 @@
 export type TaskStatus =
-  | "backlog"
   | "queued"
   | "running"
   | "blocked"
@@ -51,11 +50,6 @@ export interface Task {
   repo: string;
   priority: number;
   size: TaskSize;
-  /**
-   * "Not urgent — only dispatch in a full schedule window." Orthogonal to
-   * size (token cost) and priority (queue order): this one gates eligibility.
-   */
-  defer: boolean;
   worktree: boolean;
   branch?: string;
   permissionMode: PermissionMode;
@@ -79,12 +73,10 @@ export interface NewTaskInput {
   prompt: string;
   priority?: number;
   size?: TaskSize;
-  defer?: boolean;
   worktree?: boolean;
   permissionMode?: PermissionMode;
   claudeArgs?: string[];
   maxAttempts?: number;
-  status?: "backlog" | "queued";
 }
 
 export interface ScheduleWindow {
@@ -149,7 +141,8 @@ export interface JournalEvent {
   ts: string;
   taskId: string;
   from: TaskStatus | null;
-  to: TaskStatus;
+  /** "deleted" is not a status: it is the last thing a task file ever records. */
+  to: TaskStatus | "deleted";
   source: string;
   detail?: Record<string, unknown>;
 }

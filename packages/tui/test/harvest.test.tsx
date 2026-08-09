@@ -7,11 +7,10 @@ import type { Task } from "@collie/core";
 const task = (over: Partial<Task>): Task => ({
   id: "t-20260808-aaaa",
   title: "A task",
-  status: "backlog",
+  status: "queued",
   repo: "/tmp/repo",
   priority: 100,
   size: "M",
-  defer: false,
   worktree: false,
   permissionMode: "acceptEdits",
   claudeArgs: [],

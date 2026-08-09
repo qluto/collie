@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 import * as YAML from "yaml";
-import { taskFilePath, tasksDir, ensureDataDirs } from "./paths.ts";
+import { archiveDir, archivedTaskFilePath, taskFilePath, tasksDir, ensureDataDirs } from "./paths.ts";
 import { withLock } from "./lock.ts";
 import { appendEvent } from "./journal.ts";
 import { DEFAULT_CONFIG, loadConfig } from "./config.ts";
@@ -16,8 +16,7 @@ export class IllegalTransitionError extends StoreError {
 }
 
 const LEGAL_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
-  backlog: ["queued"],
-  queued: ["backlog", "running", "failed"], // queued→failed: spawn attempts exhausted
+  queued: ["running", "failed"], // queued→failed: spawn attempts exhausted
   running: ["blocked", "review", "failed", "queued"],
   blocked: ["running", "review", "failed", "queued"], // blocked→queued: pane died while blocked
   review: ["done", "queued"],
@@ -28,7 +27,7 @@ const LEGAL_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
 // --- (de)serialization ------------------------------------------------------
 
 const FRONTMATTER_KEYS: Array<keyof Task> = [
-  "id", "title", "status", "repo", "priority", "size", "defer", "worktree", "branch",
+  "id", "title", "status", "repo", "priority", "size", "worktree", "branch",
   "permissionMode", "claudeArgs", "createdAt", "updatedAt", "queuedAt",
   "startedAt", "endedAt", "attempts", "maxAttempts", "rev", "run",
 ];
@@ -47,15 +46,17 @@ export function parseTaskFile(content: string, sourcePath: string): Task {
   if (!m) throw new StoreError(`${sourcePath}: missing frontmatter`);
   const fm = YAML.parse(m[1]!) as Record<string, unknown>;
   const prompt = m[2] ?? "";
-  const t = fm as unknown as Task;
+  const { defer: _legacyDefer, ...t } = fm as unknown as Task & { defer?: boolean };
   if (typeof t.id !== "string" || typeof t.status !== "string") {
     throw new StoreError(`${sourcePath}: frontmatter missing id/status`);
   }
+  // Lazy migration: files captured before the refocus can still say "backlog",
+  // which no longer exists — tossing a task in has always meant "run it".
+  if ((t.status as string) === "backlog") t.status = "queued";
   if (!(t.status in LEGAL_TRANSITIONS)) {
     throw new StoreError(`${sourcePath}: unknown status "${t.status}"`);
   }
-  // defer postdates the first task files — absent means "dispatch anytime"
-  return { ...t, claudeArgs: t.claudeArgs ?? [], defer: t.defer ?? false, prompt };
+  return { ...t, claudeArgs: t.claudeArgs ?? [], prompt };
 }
 
 /** Atomic write: temp file in the same directory + rename. */
@@ -66,13 +67,16 @@ function writeTaskFile(task: Task): void {
   fs.renameSync(tmp, dest);
 }
 
+/** Live file first, then the archive — a done task is still readable by id. */
 function readTask(id: string): Task | null {
-  try {
-    return parseTaskFile(fs.readFileSync(taskFilePath(id), "utf8"), taskFilePath(id));
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw err;
+  for (const p of [taskFilePath(id), archivedTaskFilePath(id)]) {
+    try {
+      return parseTaskFile(fs.readFileSync(p, "utf8"), p);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
   }
+  return null;
 }
 
 // --- public API -------------------------------------------------------------
@@ -82,18 +86,32 @@ export function generateId(now = new Date()): string {
   return `t-${ymd}-${crypto.randomBytes(2).toString("hex")}`;
 }
 
-export function listTasks(filter?: { status?: TaskStatus[] }): Task[] {
+export function listTasks(filter?: { status?: TaskStatus[]; includeArchived?: boolean }): Task[] {
   ensureDataDirs();
-  const tasks: Task[] = [];
-  for (const entry of fs.readdirSync(tasksDir())) {
-    if (!entry.endsWith(".md") || entry.startsWith(".")) continue;
-    const p = path.join(tasksDir(), entry);
+  // keyed by id: a home mid-migration can hold both a live and an archived copy
+  // of the same task, and the live one is the newer record
+  const byId = new Map<string, Task>();
+  const dirs = [tasksDir(), ...(filter?.includeArchived ? [archiveDir()] : [])];
+  for (const dir of dirs) {
+    let entries: string[];
     try {
-      tasks.push(parseTaskFile(fs.readFileSync(p, "utf8"), p));
+      entries = fs.readdirSync(dir);
     } catch {
-      // unparseable file: skip rather than take the whole board down
+      continue; // archive/ may not exist yet
+    }
+    for (const entry of entries) {
+      // the archive subdirectory is skipped for free: it is not a *.md entry
+      if (!entry.endsWith(".md") || entry.startsWith(".")) continue;
+      const p = path.join(dir, entry);
+      try {
+        const task = parseTaskFile(fs.readFileSync(p, "utf8"), p);
+        if (!byId.has(task.id)) byId.set(task.id, task);
+      } catch {
+        // unparseable file: skip rather than take the whole board down
+      }
     }
   }
+  const tasks = [...byId.values()];
   const filtered = filter?.status ? tasks.filter((t) => filter.status!.includes(t.status)) : tasks;
   return filtered.sort(
     (a, b) =>
@@ -119,21 +137,20 @@ export function createTask(input: NewTaskInput, opts?: { source?: string }): Tas
     // keep built-in defaults
   }
   const d = config.defaults;
-  const status = input.status ?? "backlog";
   const task: Task = {
     id: generateId(),
     title: input.title,
-    status,
+    // tossed in = will run; there is no captured-but-not-queued state anymore
+    status: "queued",
     repo: input.repo,
     priority: input.priority ?? 100,
     size: input.size ?? "M",
-    defer: input.defer ?? false,
     worktree: input.worktree ?? d.worktree,
     permissionMode: input.permissionMode ?? d.permissionMode,
     claudeArgs: input.claudeArgs ?? [],
     createdAt: now,
     updatedAt: now,
-    queuedAt: status === "queued" ? now : undefined,
+    queuedAt: now,
     attempts: 0,
     maxAttempts: input.maxAttempts ?? config.dispatch.maxAttempts,
     rev: 0,
@@ -143,7 +160,7 @@ export function createTask(input: NewTaskInput, opts?: { source?: string }): Tas
   return withLock(() => {
     if (readTask(task.id)) throw new StoreError(`task id collision: ${task.id}`);
     writeTaskFile(task);
-    appendEvent({ ts: now, taskId: task.id, from: null, to: status, source: opts?.source ?? "cli" });
+    appendEvent({ ts: now, taskId: task.id, from: null, to: task.status, source: opts?.source ?? "cli" });
     return task;
   });
 }
@@ -197,6 +214,9 @@ export function transition(
       }
     }
     writeTaskFile(task);
+    // A done task leaves the working set: write the final content first, then
+    // move it, so the archived file is the complete record either way.
+    if (to === "done") fs.renameSync(taskFilePath(id), archivedTaskFilePath(id));
     appendEvent({
       ts: now, taskId: id, from, to,
       source: opts?.source ?? "unknown",
@@ -236,11 +256,29 @@ export function markDone(id: string, opts?: { source?: string }): Task {
   return transition(id, "done", undefined, opts);
 }
 
-/** Cancel: any non-terminal status -> failed (queued/backlog cancel is a plain delete-from-queue). */
+/**
+ * Remove a task outright. Used for a mis-toss: parking it in `failed` would
+ * pollute the one lane that means "something actually went wrong".
+ */
+export function deleteTask(id: string, opts?: { source?: string }): Task {
+  ensureDataDirs();
+  return withLock(() => {
+    const task = readTask(id);
+    if (!task) throw new StoreError(`no such task: ${id}`);
+    fs.unlinkSync(fs.existsSync(taskFilePath(id)) ? taskFilePath(id) : archivedTaskFilePath(id));
+    appendEvent({
+      ts: new Date().toISOString(), taskId: id, from: task.status, to: "deleted",
+      source: opts?.source ?? "unknown",
+    });
+    return task;
+  });
+}
+
+/** Cancel: a queued task vanishes; anything already in flight is forced to failed. */
 export function cancelTask(id: string, opts?: { source?: string }): Task {
   const task = getTask(id);
   if (!task) throw new StoreError(`no such task: ${id}`);
-  if (task.status === "queued") return transition(id, "backlog", undefined, opts);
-  if (task.status === "done" || task.status === "failed" || task.status === "backlog") return task;
+  if (task.status === "queued") return deleteTask(id, opts);
+  if (task.status === "done" || task.status === "failed") return task;
   return transition(id, "failed", { failureReason: "cancelled" }, { ...opts, force: true });
 }

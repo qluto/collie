@@ -48,13 +48,10 @@ export function planTick(ctx: DispatcherCtx, now = new Date()): TickPlan {
     if (queued.length === 0) {
       return { mode, decision: `queue empty (wip ${wip}/${ctx.config.dispatch.wipLimit})` };
     }
-    const deferred = queued.filter((t) => t.defer).length;
-    const oversized = queued.length - deferred;
-    const why = [
-      deferred ? `${deferred} deferred` : "",
-      oversized ? `${oversized} over size cap ${cap}` : "",
-    ].filter(Boolean).join(", ");
-    return { mode, decision: `no candidate fits ${mode} mode (${why}) — waiting for a full window` };
+    return {
+      mode,
+      decision: `no candidate fits ${mode} mode (${queued.length} over size cap ${cap}) — waiting for a full window`,
+    };
   }
 
   // Anthropic's own percentages when we have a fresh reading (refreshLimits runs
