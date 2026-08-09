@@ -101,6 +101,21 @@ export interface Config {
     windows: ScheduleWindow[];
     defaultMode: ScheduleMode;
   };
+  presence: {
+    /**
+     * Off by default: turning a daytime machine into a dispatch target has to
+     * be a decision, not something a config-template update does to you.
+     */
+    enabled: boolean;
+    /** input idle below this = a human is here */
+    idleThresholdMin: number;
+    /** what a full window degrades to while someone is present */
+    whenPresent: "conservative" | "paused";
+    /** count a working non-collie agent as presence */
+    respectOtherAgents: boolean;
+    /** opt-in: a long-idle machine may run full outside its full windows */
+    absentUpgrade: boolean;
+  };
   quota: {
     blockBudgetTokens: number;
     weekBudgetTokens: number;

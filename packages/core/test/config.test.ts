@@ -26,6 +26,32 @@ describe("config", () => {
     expect(() => parseConfig(`[quota.burn_down]\nenabled = "yes"\n`)).toThrow(ConfigError);
   });
 
+  test("presence defaults off, and only ever downgrades a full window", () => {
+    expect(parseConfig(DEFAULT_CONFIG_TOML).presence).toEqual({
+      enabled: false,
+      idleThresholdMin: 20,
+      whenPresent: "conservative",
+      respectOtherAgents: true,
+      absentUpgrade: false,
+    });
+    expect(parseConfig("").presence.enabled).toBe(false);
+    const c = parseConfig(
+      `[presence]\nenabled = true\nidle_threshold_min = 45\nwhen_present = "paused"\nabsent_upgrade = true\n`,
+    );
+    expect(c.presence).toEqual({
+      enabled: true,
+      idleThresholdMin: 45,
+      whenPresent: "paused",
+      respectOtherAgents: true,
+      absentUpgrade: true,
+    });
+    // "full" would be a no-op downgrade; the other bounds keep the probe sane
+    expect(() => parseConfig(`[presence]\nwhen_present = "full"\n`)).toThrow(ConfigError);
+    expect(() => parseConfig(`[presence]\nidle_threshold_min = 0\n`)).toThrow(ConfigError);
+    expect(() => parseConfig(`[presence]\nidle_threshold_min = 481\n`)).toThrow(ConfigError);
+    expect(() => parseConfig(`[presence]\nenabled = "yes"\n`)).toThrow(ConfigError);
+  });
+
   test("forecast pct-per-task defaults and stays a usable divisor", () => {
     expect(parseConfig("").forecast.sessionPctPerTask).toBe(15);
     expect(parseConfig(`[forecast]\nsession_pct_per_task = 8\n`).forecast.sessionPctPerTask).toBe(8);

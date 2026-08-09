@@ -1,7 +1,9 @@
 import * as fs from "node:fs";
 import * as net from "node:net";
 import { spawnSync } from "node:child_process";
-import { ConfigError, ensureDataDirs, hubHome, loadConfig, refreshLimits } from "@collie/core";
+import {
+  ConfigError, ensureDataDirs, hubHome, inputIdleSeconds, loadConfig, refreshLimits,
+} from "@collie/core";
 
 function check(label: string, ok: boolean, detail?: string): boolean {
   console.log(`${ok ? "ok " : "FAIL"}  ${label}${detail ? ` — ${detail}` : ""}`);
@@ -37,6 +39,14 @@ export async function runDoctor(): Promise<number> {
   if (config) {
     const reachable = await herdrSocketReachable(config.herdr.socketPath);
     allOk = check("herdr socket reachable", reachable, config.herdr.socketPath) && allOk;
+
+    // Not fatal: a failed probe means "unknown", which leaves the mode alone.
+    const idle = inputIdleSeconds();
+    check(
+      `presence ${config.presence.enabled ? "enabled" : "disabled"}`,
+      true,
+      idle === null ? "probe failed" : `input idle ${Math.round(idle)}s`,
+    );
   }
 
   const claude = spawnSync("claude", ["--version"], { encoding: "utf8" });

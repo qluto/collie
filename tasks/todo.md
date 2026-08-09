@@ -424,4 +424,4 @@ Plan: /Users/qluto/.claude/plans/flickering-singing-mango.md
 - [x] Stage 4 — 捕獲の軽量化（newTask 3ステップ, 即 queued）
 - [x] Stage 5 — 軸削除（defer/backlog 廃止, done アーカイブ, Asking 表記）※pre-flight済: ライブ backlog 0件
 - [x] Stage 6 — burn-down クォータモード（effectiveSessionFraction）
-- [ ] Stage 7 — presence 検出（ioreg HIDIdleTime, default off）
+- [x] Stage 7 — presence 検出（ioreg HIDIdleTime, default off）

@@ -19,6 +19,18 @@ mode = "full"
 [schedule]
 default_mode = "conservative"   # applies outside all windows
 
+[presence]
+# macOS input-idle as a dispatch signal. Post-processes the schedule mode:
+# a human at the keyboard downgrades full -> when_present; absent_upgrade
+# lets a long-idle machine run full outside its windows. paused never
+# upgrades. Off by default: turning your daytime machine into a dispatch
+# target should be a decision, not an update.
+enabled = false
+idle_threshold_min = 20
+when_present = "conservative"     # conservative|paused
+respect_other_agents = true       # a working non-collie agent counts as "present"
+absent_upgrade = false
+
 [quota]
 # Calibrate: when a real limit hit occurs, note ccusage's active-block totalTokens
 # and set block_budget_tokens slightly below it. Start conservative.
@@ -86,6 +98,13 @@ export const DEFAULT_CONFIG: Config = {
     windows: [{ start: "00:00", end: "07:00", mode: "full" }],
     defaultMode: "conservative",
   },
+  presence: {
+    enabled: false,
+    idleThresholdMin: 20,
+    whenPresent: "conservative",
+    respectOtherAgents: true,
+    absentUpgrade: false,
+  },
   quota: {
     blockBudgetTokens: 60_000_000,
     weekBudgetTokens: 800_000_000,
@@ -118,6 +137,8 @@ export const DEFAULT_CONFIG: Config = {
 export class ConfigError extends Error {}
 
 const MODES: ScheduleMode[] = ["full", "conservative", "paused"];
+/** Presence only ever downgrades a full window — "full" here would be a no-op. */
+const WHEN_PRESENT = ["conservative", "paused"] as const;
 const SIZES: TaskSize[] = ["S", "M", "L"];
 /** Mirrors `claude --permission-mode`, plus the legacy `default` alias. */
 export const PERMISSION_MODES: PermissionMode[] = [
@@ -138,6 +159,11 @@ function num(v: unknown, name: string, opts?: { min?: number; max?: number }): n
 
 function str(v: unknown, name: string): string {
   if (typeof v !== "string" || v.length === 0) fail(`${name} must be a non-empty string`);
+  return v;
+}
+
+function bool(v: unknown, name: string): boolean {
+  if (typeof v !== "boolean") fail(`${name} must be a boolean`);
   return v;
 }
 
@@ -199,6 +225,15 @@ export function parseConfig(toml: string): Config {
     schedule: {
       windows,
       defaultMode: pick("schedule.default_mode", d.schedule.defaultMode, (v) => oneOf(v, "schedule.default_mode", MODES)),
+    },
+    presence: {
+      enabled: pick("presence.enabled", d.presence.enabled, (v) => bool(v, "presence.enabled")),
+      // 480 = 8h: past that the "is anyone here" question is really "is this
+      // machine asleep", which the probe cannot answer either way.
+      idleThresholdMin: pick("presence.idle_threshold_min", d.presence.idleThresholdMin, (v) => num(v, "presence.idle_threshold_min", { min: 1, max: 480 })),
+      whenPresent: pick("presence.when_present", d.presence.whenPresent, (v) => oneOf(v, "presence.when_present", WHEN_PRESENT)),
+      respectOtherAgents: pick("presence.respect_other_agents", d.presence.respectOtherAgents, (v) => bool(v, "presence.respect_other_agents")),
+      absentUpgrade: pick("presence.absent_upgrade", d.presence.absentUpgrade, (v) => bool(v, "presence.absent_upgrade")),
     },
     quota: {
       blockBudgetTokens: pick("quota.block_budget_tokens", d.quota.blockBudgetTokens, (v) => num(v, "quota.block_budget_tokens", { min: 1 })),

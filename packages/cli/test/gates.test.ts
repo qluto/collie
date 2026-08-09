@@ -2,7 +2,10 @@ import { describe, expect, test, beforeEach, afterAll } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { DEFAULT_CONFIG, clearUsageCache, createTask, transition, type Config } from "@collie/core";
+import {
+  DEFAULT_CONFIG, clearUsageCache, createTask, transition,
+  type Config, type HerdrAgentInfo,
+} from "@collie/core";
 import { createCtx } from "../src/dispatcher/ctx.ts";
 import { planTick } from "../src/dispatcher/gates.ts";
 
@@ -13,11 +16,38 @@ function freshHome(): string {
 }
 
 /** Always-full window + unreadable ccusage => the quota gate allows (gate.ts). */
-function config(dispatch: Partial<Config["dispatch"]>): Config {
+function config(dispatch: Partial<Config["dispatch"]>, presence?: Partial<Config["presence"]>): Config {
   return {
     ...DEFAULT_CONFIG,
     dispatch: { ...DEFAULT_CONFIG.dispatch, ...dispatch },
     schedule: { windows: [], defaultMode: "full" },
+    presence: { ...DEFAULT_CONFIG.presence, ...presence },
+  };
+}
+
+/**
+ * Force the HID probe to answer "unavailable" (its non-mac path), so the
+ * other-agents signal is the only presence input and whoever runs the suite
+ * isn't a variable.
+ */
+function withoutHidProbe<T>(fn: () => T): T {
+  const orig = process.platform;
+  Object.defineProperty(process, "platform", { value: "linux", configurable: true });
+  try {
+    return fn();
+  } finally {
+    Object.defineProperty(process, "platform", { value: orig, configurable: true });
+  }
+}
+
+function workingAgent(paneId: string): HerdrAgentInfo {
+  return {
+    agent: paneId,
+    agent_status: "working",
+    cwd: "/tmp",
+    pane_id: paneId,
+    tab_id: "tab-1",
+    workspace_id: "ws-1",
   };
 }
 
@@ -66,5 +96,39 @@ describe("planTick WIP accounting", () => {
     const plan = planTick(createCtx(config({ wipLimit: 2, askingLimit: 1 }), false));
     expect(plan.task).toBeUndefined();
     expect(plan.decision).toMatch(/asking limit/);
+  });
+});
+
+describe("planTick presence", () => {
+  test("someone else's working pane downgrades a full window", () => {
+    createTask({ title: "work", repo: "/tmp", prompt: "p" });
+    const ctx = createCtx(config({}, { enabled: true }), false);
+    ctx.agents = [workingAgent("pane-someone-else")];
+
+    const plan = withoutHidProbe(() => planTick(ctx));
+    expect(plan.mode).toBe("conservative");
+    expect(plan.decision).toMatch(/presence: another agent working → conservative/);
+  });
+
+  test("our own running task's pane is not 'someone else'", () => {
+    const running = createTask({ title: "r", repo: "/tmp", prompt: "p" });
+    transition(running.id, "running", { paneId: "pane-ours" }, { source: "test" });
+    createTask({ title: "work", repo: "/tmp", prompt: "p" });
+    const ctx = createCtx(config({}, { enabled: true }), false);
+    ctx.agents = [workingAgent("pane-ours")];
+
+    const plan = withoutHidProbe(() => planTick(ctx));
+    expect(plan.mode).toBe("full");
+    expect(plan.decision).not.toMatch(/presence/);
+  });
+
+  test("disabled presence never touches the mode", () => {
+    createTask({ title: "work", repo: "/tmp", prompt: "p" });
+    const ctx = createCtx(config({}), false);
+    ctx.agents = [workingAgent("pane-someone-else")];
+
+    const plan = planTick(ctx);
+    expect(plan.mode).toBe("full");
+    expect(plan.decision).not.toMatch(/presence/);
   });
 });

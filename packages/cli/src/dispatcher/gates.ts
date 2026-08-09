@@ -1,5 +1,6 @@
 import {
-  blockedUntil, getUsage, limitsAllow, listTasks, modeAdmits, quotaAllows, readLimits, resolveMode,
+  applyPresence, blockedUntil, getUsage, inputIdleSeconds, limitsAllow, listTasks, modeAdmits,
+  quotaAllows, readLimits, resolveMode,
 } from "@collie/core";
 import type { ScheduleMode, Task } from "@collie/core";
 import type { DispatcherCtx } from "./ctx.ts";
@@ -11,16 +12,44 @@ export interface TickPlan {
 }
 
 /**
+ * Is some agent working in a pane collie does not own? Screen-scraped status is
+ * noisy, but for "someone else is using this machine" a false positive only
+ * costs one conservative tick.
+ */
+function otherAgentsWorking(ctx: DispatcherCtx): boolean {
+  const ours = new Set(
+    listTasks({ status: ["running", "blocked"] })
+      .map((t) => t.run?.paneId)
+      .filter((p): p is string => p !== undefined),
+  );
+  return ctx.agents.some((a) => a.agent_status === "working" && !ours.has(a.pane_id));
+}
+
+/**
  * Compose all dispatch gates for one tick:
- * schedule mode -> blockedUntil hard stop -> WIP -> candidate -> quota math.
+ * schedule mode -> presence -> blockedUntil hard stop -> WIP -> candidate -> quota math.
  */
 export function planTick(ctx: DispatcherCtx, now = new Date()): TickPlan {
-  const mode = resolveMode(ctx.config.schedule, now);
-  if (mode === "paused") return { mode, decision: "paused by schedule window" };
+  let mode = resolveMode(ctx.config.schedule, now);
+
+  // Presence post-processes the window's verdict; the probe is one spawnSync
+  // per tick and only runs when the feature is on.
+  let presence: string | undefined;
+  if (ctx.config.presence.enabled) {
+    const signals = { idleSec: inputIdleSeconds(), othersWorking: otherAgentsWorking(ctx) };
+    const res = applyPresence(mode, signals, ctx.config.presence);
+    mode = res.mode;
+    presence = res.reason;
+  }
+  const decide = (decision: string) => (presence ? `${presence}; ${decision}` : decision);
+
+  if (mode === "paused") {
+    return { mode, decision: presence ?? "paused by schedule window" };
+  }
 
   const hardStop = blockedUntil();
   if (hardStop) {
-    return { mode, decision: `limit hit earlier; blocked until ${hardStop.toLocaleString()}` };
+    return { mode, decision: decide(`limit hit earlier; blocked until ${hardStop.toLocaleString()}`) };
   }
 
   // WIP is work in flight only: a task blocked on a question consumes no tokens
@@ -28,7 +57,7 @@ export function planTick(ctx: DispatcherCtx, now = new Date()): TickPlan {
   // starve the whole night.
   const wip = listTasks({ status: ["running"] }).length;
   if (wip >= ctx.config.dispatch.wipLimit) {
-    return { mode, decision: `wip full (${wip}/${ctx.config.dispatch.wipLimit})` };
+    return { mode, decision: decide(`wip full (${wip}/${ctx.config.dispatch.wipLimit})`) };
   }
 
   // Blocked tasks are still a backstop: past this many unanswered questions the
@@ -37,7 +66,7 @@ export function planTick(ctx: DispatcherCtx, now = new Date()): TickPlan {
   if (asking >= ctx.config.dispatch.askingLimit) {
     return {
       mode,
-      decision: `asking limit (${asking}/${ctx.config.dispatch.askingLimit}) — answer questions in the TUI`,
+      decision: decide(`asking limit (${asking}/${ctx.config.dispatch.askingLimit}) — answer questions in the TUI`),
     };
   }
 
@@ -46,11 +75,11 @@ export function planTick(ctx: DispatcherCtx, now = new Date()): TickPlan {
   const candidate = queued.find((t) => modeAdmits(t, mode, cap));
   if (!candidate) {
     if (queued.length === 0) {
-      return { mode, decision: `queue empty (wip ${wip}/${ctx.config.dispatch.wipLimit})` };
+      return { mode, decision: decide(`queue empty (wip ${wip}/${ctx.config.dispatch.wipLimit})`) };
     }
     return {
       mode,
-      decision: `no candidate fits ${mode} mode (${queued.length} over size cap ${cap}) — waiting for a full window`,
+      decision: decide(`no candidate fits ${mode} mode (${queued.length} over size cap ${cap}) — waiting for a full window`),
     };
   }
 
@@ -60,7 +89,7 @@ export function planTick(ctx: DispatcherCtx, now = new Date()): TickPlan {
   const verdict = limits
     ? limitsAllow(ctx.config.quota, mode, limits, now.getTime())
     : quotaAllows(ctx.config.quota, mode, candidate.size, getUsage());
-  if (!verdict.allow) return { mode, decision: verdict.reason };
+  if (!verdict.allow) return { mode, decision: decide(verdict.reason) };
 
-  return { mode, task: candidate, decision: `dispatching ${candidate.id} (${verdict.reason})` };
+  return { mode, task: candidate, decision: decide(`dispatching ${candidate.id} (${verdict.reason})`) };
 }
