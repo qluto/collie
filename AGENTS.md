@@ -1,10 +1,12 @@
 # AGENTS.md
 
-collie is a kanban task queue that dispatches Codex sessions into
-[Herdr](https://herdr.dev) panes during token-quota idle windows (nights
-preferred). Monorepo (bun workspaces): `packages/core` (store, herdr socket
-client, quota), `packages/cli` (single `collie` bin: task commands, dispatcher,
-hooks), `packages/tui` (Ink kanban).
+collie is an unattended-work box for Claude Code sessions on
+[Herdr](https://herdr.dev): toss tasks in by day (a task in collie means "this
+runs without me"), the dispatcher burns leftover token quota at night
+(presence × limits × burn-down), harvest the results in the morning (approve /
+answer questions / retry). Monorepo (bun workspaces): `packages/core` (store,
+herdr socket client, quota), `packages/cli` (single `collie` bin: task
+commands, dispatcher, hooks), `packages/tui` (Ink: harvest view + board).
 
 ## Commands
 
@@ -13,7 +15,7 @@ bun install
 bun test                  # full suite; must stay green
 bunx tsc --noEmit         # typecheck (strict)
 bun packages/cli/src/index.ts <cmd>   # run the CLI from source
-collie doctor             # env sanity (herdr socket, Codex, ccusage)
+collie doctor             # env sanity (herdr socket, claude, ccusage)
 ```
 
 ## ⚠ Live system — isolate your tests
@@ -27,16 +29,21 @@ frames), `COLLIE_CCUSAGE_BIN` (fixture script instead of real ccusage).
 ## Architecture (follow the data)
 
 1. Tasks are markdown files in `$COLLIE_HOME/tasks/<id>.md` — YAML frontmatter
-   (status machine: backlog/queued/running/blocked/review/done/failed) + body =
-   prompt. ALL mutations go through `core/src/store.ts` (global lockfile +
-   atomic tmp-rename + rev counter). Never write task files directly.
+   (status machine: queued/running/blocked/review/done/failed; created tasks
+   are always queued, `done` moves the file to `tasks/archive/` under the same
+   lock, cancelling a queued task deletes it) + body = prompt. ALL mutations go
+   through `core/src/store.ts` (global lockfile + atomic tmp-rename + rev
+   counter). Never write task files directly. Legacy files parse leniently:
+   `status: backlog` reads as queued, a `defer:` line is dropped on next write.
 2. The dispatcher (`cli/src/dispatcher/`) ticks every 30s: reconcile against
-   `agent.list` → watchdog (idle timeout, limit scrape) → gates
-   (schedule window → quota.json blockedUntil → WIP → `modeAdmits` +
-   `limitsAllow` in `core/src/quota/gate.ts`) → dispatch: worktree.create → agent.start →
-   verify-inject one-line prompt pointer → Enter → transition to running LAST
-   (crash safety; half-spawned panes are adopted via the session-start hook).
-3. Spawned Codex sessions get generated `--settings` with hooks that call
+   `agent.list` → watchdog (idle timeout, limit scrape, question scrape) →
+   gates (schedule window → presence post-process → quota.json blockedUntil →
+   WIP (running only) → asking_limit → `modeAdmits` + `limitsAllow` incl.
+   burn-down in `core/src/quota/gate.ts`) → dispatch: worktree.create →
+   agent.start → verify-inject one-line prompt pointer → Enter → transition to
+   running LAST (crash safety; half-spawned panes are adopted via the
+   session-start hook).
+3. Spawned claude sessions get generated `--settings` with hooks that call
    back into `collie hook <name>`; task identity rides env `COLLIE_TASK_ID`,
    pane identity `HERDR_PANE_ID`. Completion = the session runs
    `collie task complete <id>` (pre-allowed in generated permissions) →
@@ -69,15 +76,15 @@ frames), `COLLIE_CCUSAGE_BIN` (fixture script instead of real ccusage).
 ## Quota: real percentages, not token estimates
 
 - The gate reads Anthropic's OWN utilization from `GET /api/oauth/usage` — the
-  numbers Codex's `/usage` panel shows. Parse `limits[]` (`group` ∈
+  numbers claude's `/usage` panel shows. Parse `limits[]` (`group` ∈
   session|weekly, `percent`); the sibling top-level keys are internal codenames
   (`tangelo`, `iguana_necktie`, `nimbus_quill`…) that will churn.
 - **Undocumented endpoint** — treat it as best-effort: `readLimits()` returning
   null falls the gate back to the ccusage token math, which is why
   `block_budget_tokens` and `size_estimate_tokens` still exist.
 - Auth: the LIVE oauth token is in the macOS Keychain (`security
-  find-generic-password -s "Codex-credentials"`);
-  `~/.Codex/.credentials.json` goes stale. collie only READS it — never
+  find-generic-password -s "Claude Code-credentials"`);
+  `~/.claude/.credentials.json` goes stale. collie only READS it — never
   refresh, that rotates the user's credentials and can log them out. An expired
   token means "unavailable", not "re-auth".
 - Fetched at most every 10min and cached to `$COLLIE_HOME/limits.json` so the
@@ -87,13 +94,36 @@ frames), `COLLIE_CCUSAGE_BIN` (fixture script instead of real ccusage).
   there is deliberately no per-size percentage estimate (it would be another
   uncalibrated guess), so a task can cross the cap mid-run — the limit-hit
   scraper catches that and requeues without burning an attempt.
+  (`forecast.session_pct_per_task` exists but is display-only: it turns header
+  headroom into "≈N tasks", it never gates.)
+- **Burn-down** (`[quota.burn_down]`, default on): session headroom is
+  use-it-or-lose-it, so within `window_min` of `sessionResetsAt` a full window
+  spends up to `burn_down.fraction` (max()-ed — only ever raises). Gate and
+  forecast header share `effectiveSessionFraction` so the header can never
+  promise headroom the gate refuses. ccusage fallback path has no reset time
+  and never burns.
+- **Presence** (`[presence]`, default OFF): post-processes the schedule mode,
+  never replaces it. Present (input idle < threshold, or a working non-collie
+  agent when `respect_other_agents`) downgrades full → `when_present`; absent +
+  `absent_upgrade` lifts conservative → full; paused never upgrades; a failed
+  ioreg probe is "unknown" and changes nothing.
 
 ## Non-obvious invariants
 
-- Three orthogonal task axes, do not conflate them: `size` = token-cost
-  estimate (feeds the quota math), `priority` = queue order ONLY (no gating
-  power), `defer` = eligibility ("full windows only"). New task fields need a
-  `?? default` in `parseTaskFile` — existing files on disk predate them.
+- Two task axes, do not conflate them: `size` = token-cost estimate (feeds the
+  quota math + conservative cap), `priority` = queue order ONLY (no gating
+  power). `defer` no longer exists — a task in collie is by definition
+  unattended, night-eligible work. New task fields need a `?? default` in
+  `parseTaskFile` — existing files on disk predate them.
+- WIP counts `running` only — a task blocked on a question burns no tokens, so
+  it must not starve the night. `dispatch.asking_limit` (min 1; 0 would pause
+  dispatch forever) backstops the pile of unanswered questions instead.
+- Question harvest: the Notification hook stores `payload.message` in
+  `run.question` (300-char cap); the dispatcher's `scrapeQuestions` writes the
+  real pane text to `runs/<id>/question.txt` once per blocked episode
+  (`questionScrapedAt` marks it). The stop hook clears both — an answered
+  question must not linger. Harvest's `a` answers via `agent.send` + explicit
+  `pane.send_keys` Enter and leaves status alone (the stop hook unblocks).
 
 - Requeueing MUST clear `run.paneId` (see `requeueOrFail`) — the dispatch
   candidate filter skips tasks with a paneId (half-spawn adoption guard) and a
@@ -112,7 +142,7 @@ frames), `COLLIE_CCUSAGE_BIN` (fixture script instead of real ccusage).
 - Hooks must always exit 0 and stay <200ms; failures are swallowed to
   `logs/hooks.log`.
 - Limit hits: scrape the pane for "You've hit your … limit · resets …", trust
-  Codex's own reset time → `quota.json.blockedUntil` (+jitter); requeue
+  Claude's own reset time → `quota.json.blockedUntil` (+jitter); requeue
   WITHOUT burning an attempt.
 - Generated artifacts (plists, hook settings, prompt footers) use absolute
   bun + script paths — panes and launchd have no reliable PATH.
@@ -121,14 +151,29 @@ frames), `COLLIE_CCUSAGE_BIN` (fixture script instead of real ccusage).
   stdout write-hook DECRC-restores before any non-ours write so Ink's
   relative repaints keep their origin. Ink renders in the alternate screen
   (`runTui`); text input accumulates chunks in a ref (IME commit bursts race
-  React batching otherwise). New-task form rows are position-fixed — if you
-  change its layout, update REPO_ROW/TITLE_ROW/INPUT_COL in newTask.tsx.
+  React batching otherwise). Text-input rows are position-fixed — if you
+  change a form's layout, update REPO_ROW/TITLE_ROW/INPUT_COL in newTask.tsx
+  and ANSWER_INPUT_ROW/QUESTION_LINES in harvest.tsx (the answer overlay pads
+  the question block to a fixed height so the input row cannot drift). The
+  forecast header (2nd line) renders ONLY when no overlay is open — an extra
+  line above a form would shift every fixed row.
+- The default tab is Harvest (review / asking / failed with one-key actions);
+  the board is the "see everything" sub-view: 5 lanes, `blocked` is labeled
+  "Asking", done has no lane (archived out of the working set).
+- Below `NARROW_COLUMNS` (70) the board switches to `StackedBoard` — five lanes
+  side by side cannot hold a title on a phone. Ink has NO scrolling: anything
+  past the last row is gone, so the stacked layout budgets rows explicitly
+  (header + cards + the `… +N` row, which is the one that overflows if you
+  forget it) and drops whole lanes into a summary line rather than off-screen.
+  `Detail` cuts every line to the pane width for the same reason — a wrapped
+  line shifts the rest and the repaint lands on the previous frame, which reads
+  as corruption.
 - Board text is truncated/wrapped by `truncateToWidth`/`wrapToWidth`, never by
   Ink's `wrap="truncate"`: Ink miscounts CJK by a cell and the column border
   falls off the row. Column boxes carry an explicit `width` (not flexGrow) so
   yoga cannot round differently than that arithmetic did; the focused column
-  is widened (FOCUS_SHARE, capped at MAX_FOCUS) because six columns of a
-  normal terminal leave ~14 cells — too narrow for a Japanese title.
+  is widened (FOCUS_SHARE, capped at MAX_FOCUS) because five columns of a
+  normal terminal leave ~15 cells — too narrow for a Japanese title.
 - Jumping to a task's pane uses `agent.focus {target: paneId}` — 0.7.1 has no
   `pane.focus`, and tab/workspace focus need ids a task may not carry.
 - `collie done` closes the review loop from wherever the human is: explicit id

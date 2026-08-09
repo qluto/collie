@@ -35,10 +35,20 @@ ghq 形式の org 階層にも対応。入力でフィルタ、↑↓で選択�
 既定では 00:00–07:00 が full モード、それ以外は conservative（小さめのタスクのみ、
 予算の 35% まで）です。
 
-**タスクの3つの軸**: `size`（S/M/L = トークン消費の見積もり）、`priority`（キュー
-の並び順のみ）、`defer`（急がない = full ウィンドウでのみ起動）。「人が同席しなくて
-よく、急ぎでもない」タスクは `--defer` を付けておけば、昼間の予算を消費せず夜の
-full ウィンドウまで queued のまま待ちます（TUI では `D` でトグル、`☾` 表示）。
+**1日のサイクル**: collie に入れる = 「私がいなくてもいい」と宣言したこと。
+昼に投函（repo・タイトル・サイズの3問、10秒）→ 夜に自動投入（presence × クォータ
+残量で判断、reset 間際は burn-down で余り予算を使い切る）→ 朝に収穫（Harvest
+ビューで承認・質問への返答・retry）。タスクの軸は `size`（S/M/L = トークン消費の
+見積もり）と `priority`（キューの並び順のみ）の2つだけです。
+
+**burn-down**: セッション予算は reset で消滅するので、`[quota.burn_down]`
+（既定 on）により reset まで `window_min` 分を切った full ウィンドウでは cap が
+`fraction`（既定 0.95）まで緩みます。ヘッダーに `⌛ burn-down` と表示されます。
+
+**presence**（既定 off）: `[presence] enabled = true` にすると macOS の入力アイドル
+時間がゲート信号になります。人がキーボードにいる間は full → conservative に降格、
+`absent_upgrade = true` なら長時間不在のマシンはウィンドウ外でも full に昇格します
+（paused は決して昇格しません）。
 
 **パーミッションモード**: 既定は `auto`（claude 自身の既定でもある）。分類器が
 低リスクなツール呼び出しだけを実行し、危険なものはブロックするので無人実行に向い
@@ -142,31 +152,36 @@ Key design decisions, learned the hard way:
 元のシェル画面を復元します。日本語 IME に対応：変換中テキストは入力欄のカーソル
 位置にインライン表示され、複数文字の一括確定でも文字が欠けません。
 
+デフォルトタブは **Harvest（収穫）** — 夜が生んだ結果を朝に回収する画面です。
+✅ Review（diff 要約つき）/ ❓ Asking（エージェントの質問をインライン表示）/
+✗ Failed の3グループが並び、2行目のヘッダーには常に予算予報
+（`session 42% · resets 02:00 (+3h10m) · headroom 43% ≈5 tasks`）が出ます。
+
 | キー | 動作 |
 |---|---|
-| `1` `2` `3` | Board / Dashboard / Config タブ |
-| `h l j k` / 矢印 | 列・カード移動 |
-| `n` | 新規タスク（repo は一覧から選択 or 自由入力 → $EDITOR でプロンプト） |
-| `space` | Backlog ↔ Queued |
-| `J` `K` | Queued 内の優先度並び替え |
-| `D` | defer トグル ☾（full ウィンドウでのみ起動 / Backlog・Queued） |
-| `d` / `r` | Review→Done 昇格 / 再キュー |
-| `e` | プロンプト（または config）を $EDITOR で編集 |
-| `x` | キャンセル（確認あり。ペインは残す） |
-| `f` | Done ↔ Failed 列切替 |
+| `1` `2` `3` | Harvest / Board / Config タブ |
+| `j k` / 矢印 | カード移動 |
+| `n` | 新規タスク（repo → タイトル → サイズの3問 → $EDITOR でプロンプト） |
+| `d` | Review → Done 昇格（done はアーカイブへ移動） |
+| `a` | Asking のタスクに返答（そのペインに送信して再開） |
+| `r` | retry（Review / Failed、attempts リセット） |
+| `J` | そのタスクの Herdr ペインへジャンプ（Harvest）/ 優先度並び替え（Board） |
+| `e` | プロンプト（または config）を $EDITOR で編集（queued のみ） |
+| `x` | queued は削除、実行中はキャンセル（確認あり） |
 | `Enter` / `Esc` | 詳細表示 / 戻る |
 | `g` | 詳細画面から、そのタスクの Herdr ペインへジャンプ |
 | `?` / `q` | ヘルプ / 終了 |
 
-横幅が 70 桁未満（moshi 経由のモバイル等）では、6列を横に並べる代わりに**レーンを
-縦に積む**表示へ自動で切り替わります。空のレーンは畳まれ、画面に入り切らない分は
-`… +N` や末尾の要約行として明示されます（Ink はスクロールできないため、行数は
-明示的に配分しています）。
+Board は Queued / Running / Asking / Review / Failed の5レーン（Done はアーカイブ
+されるためレーンなし）。横幅が 70 桁未満（moshi 経由のモバイル等）では、レーンを
+横に並べる代わりに**縦に積む**表示へ自動で切り替わります。空のレーンは畳まれ、
+画面に入り切らない分は `… +N` や末尾の要約行として明示されます（Ink はスクロール
+できないため、行数は明示的に配分しています）。
 
 ## CLI
 
 ```
-collie task add|list|show|queue|backlog|retry|cancel|done|complete|fail
+collie task add|list|show|queue|retry|cancel|done|complete|fail
 collie done [<id>] [--close]   # review -> done from the agent's own pane
 collie gc [--dry-run]          # finished tasks: worktrees + merged branches
 collie dispatcher run [--once] [--verbose] | status | install | restart | uninstall
