@@ -13,6 +13,17 @@ describe("config", () => {
     expect(c.defaults.worktree).toBe(true);
     expect(c.defaults.permissionMode).toBe("auto");
     expect(c.forecast.sessionPctPerTask).toBe(15);
+    expect(c.quota.burnDown).toEqual({ enabled: true, windowMin: 90, fraction: 0.95 });
+  });
+
+  test("burn_down defaults, overrides and bounds", () => {
+    expect(parseConfig("").quota.burnDown).toEqual({ enabled: true, windowMin: 90, fraction: 0.95 });
+    const c = parseConfig(`[quota.burn_down]\nenabled = false\nwindow_min = 30\nfraction = 0.99\n`);
+    expect(c.quota.burnDown).toEqual({ enabled: false, windowMin: 30, fraction: 0.99 });
+    expect(() => parseConfig(`[quota.burn_down]\nwindow_min = 0\n`)).toThrow(ConfigError);
+    expect(() => parseConfig(`[quota.burn_down]\nwindow_min = 301\n`)).toThrow(ConfigError);
+    expect(() => parseConfig(`[quota.burn_down]\nfraction = 1.5\n`)).toThrow(ConfigError);
+    expect(() => parseConfig(`[quota.burn_down]\nenabled = "yes"\n`)).toThrow(ConfigError);
   });
 
   test("forecast pct-per-task defaults and stays a usable divisor", () => {

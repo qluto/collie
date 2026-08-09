@@ -25,6 +25,33 @@ describe("computeForecast", () => {
     expect(f.minToReset).toBe(190);
     expect(f.resetsAt?.getTime()).toBe(NOW + 190 * 60_000);
     expect(f.tasksLeft).toBe(2); // 43 / 15
+    expect(f.burning).toBe(false); // 190min out, well past the 90min window
+  });
+
+  test("inside the burn-down window the header shows the relaxed cap", () => {
+    const f = computeForecast(
+      quota,
+      "full",
+      snapshot({ sessionResetsAt: new Date(NOW + 45 * 60_000).toISOString() }),
+      15,
+      NOW,
+    );
+    expect(f.capPct).toBe(95);
+    expect(f.headroomPct).toBe(53);
+    expect(f.burning).toBe(true);
+    expect(f.tasksLeft).toBe(3);
+  });
+
+  test("conservative mode inside the window keeps its own cap", () => {
+    const f = computeForecast(
+      quota,
+      "conservative",
+      snapshot({ sessionResetsAt: new Date(NOW + 45 * 60_000).toISOString() }),
+      15,
+      NOW,
+    );
+    expect(f.capPct).toBe(35);
+    expect(f.burning).toBe(false);
   });
 
   test("conservative mode caps at fraction_conservative", () => {
@@ -70,6 +97,7 @@ describe("forecastLine", () => {
     capPct: 85,
     headroomPct: 43,
     tasksLeft: 5,
+    burning: false,
   };
 
   test("compact line without a reset time", () => {
@@ -84,6 +112,11 @@ describe("forecastLine", () => {
   test("singular task, and no estimate when tasksLeft is unknown", () => {
     expect(forecastLine({ ...base, tasksLeft: 1 }, 0, 90)).toBe("session 42% · headroom 43% ≈1 task");
     expect(forecastLine({ ...base, tasksLeft: null }, 0, 90)).toBe("session 42% · headroom 43%");
+  });
+
+  test("burn-down leads the line so truncation cannot eat it", () => {
+    expect(forecastLine({ ...base, burning: true, capPct: 95, headroomPct: 53 }, 10, 90))
+      .toBe("⌛ burn-down · session 42% · headroom 53% ≈5 tasks");
   });
 
   test("reset time is local wall clock with a duration", () => {

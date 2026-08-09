@@ -58,7 +58,7 @@ export function planTick(ctx: DispatcherCtx, now = new Date()): TickPlan {
   // at the top of the tick); ccusage's token estimate only as a fallback.
   const limits = readLimits();
   const verdict = limits
-    ? limitsAllow(ctx.config.quota, mode, limits)
+    ? limitsAllow(ctx.config.quota, mode, limits, now.getTime())
     : quotaAllows(ctx.config.quota, mode, candidate.size, getUsage());
   if (!verdict.allow) return { mode, decision: verdict.reason };
 

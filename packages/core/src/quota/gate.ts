@@ -42,6 +42,37 @@ export function modeAdmits(
 const fmtM = (n: number) => `${(n / 1e6).toFixed(1)}M`;
 
 /**
+ * The session cap actually in force right now, and whether burn-down raised it.
+ *
+ * Session headroom is use-it-or-lose-it: whatever is unspent when the 5h limit
+ * resets evaporates. So inside `burn_down.window_min` of a known reset, a full
+ * window spends up to `burn_down.fraction` instead of the standing fraction.
+ * Conservative windows never burn (the point of that mode is to leave budget
+ * for the human, who is awake), and a missing/garbage/past reset time means we
+ * cannot tell how much is about to evaporate — normal cap.
+ */
+export function effectiveSessionFraction(
+  quota: Config["quota"],
+  mode: Exclude<ScheduleMode, "paused">,
+  limits: Pick<LimitSnapshot, "sessionResetsAt">,
+  now = Date.now(),
+): { frac: number; burning: boolean } {
+  const frac = mode === "full" ? quota.fractionFull : quota.fractionConservative;
+  const bd = quota.burnDown;
+  if (mode !== "full" || !bd.enabled) return { frac, burning: false };
+  if (typeof limits.sessionResetsAt !== "string" || limits.sessionResetsAt.length === 0) {
+    return { frac, burning: false };
+  }
+  const resetsAt = new Date(limits.sessionResetsAt).getTime();
+  if (Number.isNaN(resetsAt)) return { frac, burning: false };
+  const msLeft = resetsAt - now;
+  if (msLeft <= 0 || msLeft > bd.windowMin * 60_000) return { frac, burning: false };
+  // max(): a fraction below the standing cap would be a tightening, never what
+  // "burn the leftovers" means.
+  return { frac: Math.max(frac, bd.fraction), burning: true };
+}
+
+/**
  * Preferred path: Anthropic's own utilization percentages. No token estimate,
  * no guessed denominator — the same numbers Claude Code's /usage panel shows.
  *
@@ -55,15 +86,19 @@ export function limitsAllow(
   quota: Config["quota"],
   mode: Exclude<ScheduleMode, "paused">,
   limits: LimitSnapshot,
+  now = Date.now(),
 ): GateDecision {
-  const capPct = (mode === "full" ? quota.fractionFull : quota.fractionConservative) * 100;
+  const { frac, burning } = effectiveSessionFraction(quota, mode, limits, now);
+  const capPct = frac * 100;
   const weekCapPct = quota.weekFraction * 100;
-  const age = `${Math.round((Date.now() - limits.fetchedAt) / 60_000)}m ago`;
+  const age = `${Math.round((now - limits.fetchedAt) / 60_000)}m ago`;
+  // surfaced in the dispatcher's decision line: a relaxed cap must be legible
+  const burn = burning ? " (burn-down)" : "";
 
   if (limits.sessionPct >= capPct) {
     return {
       allow: false,
-      reason: `blocked by session limit: ${limits.sessionPct}% used, cap ${capPct}% (${mode}, measured ${age})`,
+      reason: `blocked by session limit: ${limits.sessionPct}% used, cap ${capPct}% (${mode}, measured ${age})${burn}`,
     };
   }
   if (limits.weeklyPct >= weekCapPct) {
@@ -74,7 +109,7 @@ export function limitsAllow(
   }
   return {
     allow: true,
-    reason: `limits ok: session ${limits.sessionPct}%/${capPct}%, week ${limits.weeklyPct}%/${weekCapPct}% (${mode}, measured ${age})`,
+    reason: `limits ok: session ${limits.sessionPct}%/${capPct}%, week ${limits.weeklyPct}%/${weekCapPct}% (${mode}, measured ${age})${burn}`,
   };
 }
 

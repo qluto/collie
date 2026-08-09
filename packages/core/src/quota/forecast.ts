@@ -1,5 +1,6 @@
 import type { Config, ScheduleMode } from "../types.ts";
 import type { LimitSnapshot } from "./limits-api.ts";
+import { effectiveSessionFraction } from "./gate.ts";
 
 /**
  * "How much of tonight is left", in the one unit a human plans with: tasks.
@@ -19,6 +20,8 @@ export interface Forecast {
   minToReset?: number;
   /** headroom / pctPerTask, floored; null when pctPerTask cannot divide */
   tasksLeft: number | null;
+  /** capPct is the relaxed burn-down cap, not the standing one */
+  burning: boolean;
 }
 
 export function computeForecast(
@@ -28,9 +31,10 @@ export function computeForecast(
   pctPerTask: number,
   now = Date.now(),
 ): Forecast {
-  // Same arithmetic as limitsAllow (gate.ts): the header must never promise
-  // headroom the gate would refuse to spend.
-  const capPct = (mode === "full" ? quota.fractionFull : quota.fractionConservative) * 100;
+  // Same cap limitsAllow (gate.ts) applies, from the same function: the header
+  // must never promise headroom the gate would refuse to spend.
+  const { frac, burning } = effectiveSessionFraction(quota, mode, limits, now);
+  const capPct = frac * 100;
   const headroomPct = Math.max(0, capPct - limits.sessionPct);
 
   let resetsAt: Date | undefined;
@@ -50,6 +54,7 @@ export function computeForecast(
     resetsAt,
     minToReset,
     tasksLeft: pctPerTask > 0 ? Math.floor(headroomPct / pctPerTask) : null,
+    burning,
   };
 }
 
@@ -73,7 +78,11 @@ const WEEKLY_INTEREST_PCT = 15;
  * `session 42% · resets 02:00 (+3h10m) · headroom 43% ≈5 tasks`.
  */
 export function forecastLine(f: Forecast, weeklyPct: number, weekCapPct: number): string {
-  const parts = [`session ${Math.round(f.sessionPct)}%`];
+  // Leading, not trailing: the header is truncated to the terminal width from
+  // the right, and a raised cap is the one thing that must survive the cut.
+  const parts: string[] = [];
+  if (f.burning) parts.push("⌛ burn-down");
+  parts.push(`session ${Math.round(f.sessionPct)}%`);
   if (f.resetsAt && f.minToReset !== undefined) {
     parts.push(`resets ${formatClock(f.resetsAt)} (+${formatDuration(f.minToReset)})`);
   }

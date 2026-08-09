@@ -2,9 +2,12 @@ import { describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { modeAdmits, quotaAllows, sizeFits, type UsageSnapshot } from "../src/quota/gate.ts";
+import {
+  effectiveSessionFraction, limitsAllow, modeAdmits, quotaAllows, sizeFits, type UsageSnapshot,
+} from "../src/quota/gate.ts";
 import { clearUsageCache, getUsage } from "../src/quota/ccusage.ts";
 import { DEFAULT_CONFIG } from "../src/config.ts";
+import type { LimitSnapshot } from "../src/quota/limits-api.ts";
 
 const quota = DEFAULT_CONFIG.quota; // block 60M, week 800M, frac .85/.35, S/M/L = 2/8/20M
 
@@ -70,6 +73,82 @@ describe("modeAdmits", () => {
     expect(modeAdmits({ size: "S" }, "conservative", cap)).toBe(true);
     expect(modeAdmits({ size: "M" }, "conservative", cap)).toBe(true);
     expect(modeAdmits({ size: "L" }, "conservative", cap)).toBe(false);
+  });
+});
+
+describe("effectiveSessionFraction", () => {
+  const NOW = Date.UTC(2026, 0, 15, 22, 0, 0);
+  const inMin = (m: number) => ({ sessionResetsAt: new Date(NOW + m * 60_000).toISOString() });
+
+  test("full mode inside the burn window spends the relaxed fraction", () => {
+    expect(effectiveSessionFraction(quota, "full", inMin(60), NOW)).toEqual({ frac: 0.95, burning: true });
+  });
+
+  test("outside the window the standing cap holds", () => {
+    expect(effectiveSessionFraction(quota, "full", inMin(200), NOW)).toEqual({ frac: 0.85, burning: false });
+  });
+
+  test("conservative never burns, even inside the window", () => {
+    expect(effectiveSessionFraction(quota, "conservative", inMin(60), NOW)).toEqual({ frac: 0.35, burning: false });
+  });
+
+  test("disabled burn_down keeps the standing cap", () => {
+    const off = { ...quota, burnDown: { ...quota.burnDown, enabled: false } };
+    expect(effectiveSessionFraction(off, "full", inMin(60), NOW)).toEqual({ frac: 0.85, burning: false });
+  });
+
+  test("no usable reset time means we cannot know what is about to evaporate", () => {
+    for (const sessionResetsAt of [undefined, "", "soon-ish"]) {
+      expect(effectiveSessionFraction(quota, "full", { sessionResetsAt }, NOW))
+        .toEqual({ frac: 0.85, burning: false });
+    }
+  });
+
+  test("a reset already past does not burn", () => {
+    expect(effectiveSessionFraction(quota, "full", inMin(-5), NOW)).toEqual({ frac: 0.85, burning: false });
+  });
+
+  test("a fraction below the standing cap never tightens it", () => {
+    const low = { ...quota, burnDown: { ...quota.burnDown, fraction: 0.5 } };
+    expect(effectiveSessionFraction(low, "full", inMin(10), NOW)).toEqual({ frac: 0.85, burning: true });
+  });
+});
+
+describe("limitsAllow", () => {
+  const NOW = Date.UTC(2026, 0, 15, 22, 0, 0);
+  const limits = (over: Partial<LimitSnapshot> = {}): LimitSnapshot => ({
+    sessionPct: 88,
+    weeklyPct: 10,
+    fetchedAt: NOW,
+    ...over,
+  });
+  const resetIn = (m: number) => new Date(NOW + m * 60_000).toISOString();
+
+  test("88% is over the standing 85% cap", () => {
+    const d = limitsAllow(quota, "full", limits({ sessionResetsAt: resetIn(200) }), NOW);
+    expect(d.allow).toBe(false);
+    expect(d.reason).toContain("blocked by session limit");
+    expect(d.reason).not.toContain("burn-down");
+  });
+
+  test("the same 88% is spendable inside the burn window", () => {
+    const d = limitsAllow(quota, "full", limits({ sessionResetsAt: resetIn(30) }), NOW);
+    expect(d.allow).toBe(true);
+    expect(d.reason).toContain("88%/95%");
+    expect(d.reason).toContain("burn-down");
+  });
+
+  test("past even the relaxed cap the deny reason says why it was relaxed", () => {
+    const d = limitsAllow(quota, "full", limits({ sessionPct: 96, sessionResetsAt: resetIn(30) }), NOW);
+    expect(d.allow).toBe(false);
+    expect(d.reason).toContain("cap 95%");
+    expect(d.reason).toContain("burn-down");
+  });
+
+  test("the weekly cap is untouched by burn-down", () => {
+    const d = limitsAllow(quota, "full", limits({ sessionPct: 10, weeklyPct: 91, sessionResetsAt: resetIn(30) }), NOW);
+    expect(d.allow).toBe(false);
+    expect(d.reason).toContain("blocked by weekly limit");
   });
 });
 

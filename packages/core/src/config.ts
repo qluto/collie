@@ -34,6 +34,14 @@ S = 2000000
 M = 8000000
 L = 20000000
 
+[quota.burn_down]
+# use-it-or-lose-it: this close to the session reset, a full window may
+# spend up to \`fraction\` instead of fraction_full — unspent session budget
+# evaporates at reset anyway.
+enabled = true
+window_min = 90
+fraction = 0.95
+
 [forecast]
 # Rough % of a 5h session one M-size task costs. The "≈N tasks" in the TUI
 # header divides the remaining headroom by this — edit to taste. Display only:
@@ -86,6 +94,7 @@ export const DEFAULT_CONFIG: Config = {
     weekFraction: 0.9,
     sizeEstimateTokens: { S: 2_000_000, M: 8_000_000, L: 20_000_000 },
     conservativeMaxSize: "M",
+    burnDown: { enabled: true, windowMin: 90, fraction: 0.95 },
   },
   forecast: {
     sessionPctPerTask: 15,
@@ -203,6 +212,16 @@ export function parseConfig(toml: string): Config {
         L: pick("quota.size_estimate_tokens.L", d.quota.sizeEstimateTokens.L, (v) => num(v, "quota.size_estimate_tokens.L", { min: 0 })),
       },
       conservativeMaxSize: pick("quota.conservative_max_size", d.quota.conservativeMaxSize, (v) => oneOf(v, "quota.conservative_max_size", SIZES)),
+      burnDown: {
+        enabled: pick("quota.burn_down.enabled", d.quota.burnDown.enabled, (v) => {
+          if (typeof v !== "boolean") fail("quota.burn_down.enabled must be a boolean");
+          return v;
+        }),
+        // capped at 300: past five hours the "window" spans a whole session and
+        // the relaxed cap would just be the cap.
+        windowMin: pick("quota.burn_down.window_min", d.quota.burnDown.windowMin, (v) => num(v, "quota.burn_down.window_min", { min: 1, max: 300 })),
+        fraction: pick("quota.burn_down.fraction", d.quota.burnDown.fraction, (v) => num(v, "quota.burn_down.fraction", { min: 0, max: 1 })),
+      },
     },
     forecast: {
       sessionPctPerTask: pick("forecast.session_pct_per_task", d.forecast.sessionPctPerTask, (v) => num(v, "forecast.session_pct_per_task", { min: 1, max: 100 })),

@@ -110,6 +110,19 @@ export interface Config {
     weekFraction: number;
     sizeEstimateTokens: Record<TaskSize, number>;
     conservativeMaxSize: TaskSize;
+    /**
+     * Use-it-or-lose-it: session headroom left unspent when the 5h limit resets
+     * is simply gone, so close to a reset a full window may spend up to
+     * `fraction` instead of fractionFull. Full mode only — the weekly cap is not
+     * use-it-or-lose-it at session granularity and stays untouched.
+     */
+    burnDown: {
+      enabled: boolean;
+      /** minutes before the session reset in which the relaxed cap applies */
+      windowMin: number;
+      /** relaxed session cap, 0-1; only ever raises (max with fractionFull) */
+      fraction: number;
+    };
   };
   forecast: {
     /**
