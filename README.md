@@ -1,9 +1,11 @@
 # collie 🐑🐑🐕
 
-Kanban-style task queue for Claude Code sessions, orchestrated through
-[Herdr](https://herdr.dev) — the herder's sheepdog. Queue up coding tasks
-ahead of time; a dispatcher drains them into fresh Herdr panes whenever your
-token quota has headroom — preferring the night hours you configure.
+An unattended-work box for Claude Code sessions, orchestrated through
+[Herdr](https://herdr.dev) — the herder's sheepdog. Toss coding tasks in by
+day; a dispatcher burns your leftover token quota on them at night (presence ×
+real limit percentages × burn-down near the session reset); harvest the
+results in the morning — approve, answer the questions your agents got stuck
+on, retry the failures.
 
 ## クイックスタート（日本語）
 
@@ -23,7 +25,7 @@ collie task add --repo ~/dev/projects/myapp --title "flaky テストを直す"
 # 4. ディスパッチャを常駐させる（launchd）
 collie dispatcher install
 
-# 5. カンバン TUI（Herdr のペイン内で開くのがおすすめ）
+# 5. TUI — 朝の収穫ビュー + ボード（Herdr のペイン内で開くのがおすすめ）
 collie tui
 ```
 
@@ -114,7 +116,9 @@ macOS Keychain にある claude の OAuth トークンを**読むだけ**で、�
 
 ```
 task .md files ──> dispatcher (launchd, 30s tick)
-                      │  gates: schedule window → blockedUntil → WIP → quota (ccusage)
+                      │  gates: schedule window → presence → blockedUntil
+                      │         → WIP (running only) → asking_limit
+                      │         → quota % incl. burn-down (ccusage fallback)
                       ▼
                 Herdr socket API: worktree.create → agent.start (claude
                 --settings hooks) → inject one-line prompt pointer → Enter
@@ -145,6 +149,11 @@ Key design decisions, learned the hard way:
 - **Limit hits**: scraped from the pane (`You've hit your session limit ·
   resets 3:45pm`); the printed reset time becomes a hard dispatch stop
   (+ jitter) and the task requeues without burning an attempt.
+- **Questions don't kill the night**: a task blocked on a question stops
+  counting toward WIP (it burns no tokens); the hook message plus a scraped
+  pane tail land on the task for the morning harvest, and `asking_limit`
+  stops the pile from growing unbounded. One caveat: `a` sends literal text —
+  if the agent asked via an option menu, jump to the pane (`J`) instead.
 
 ## TUI
 
@@ -195,9 +204,10 @@ collie hook <name>        # internal: called by claude hooks
 ## Development
 
 ```sh
-bun test          # 67 tests: store concurrency, herdr client (fake socket),
-                  # gate math, schedule windows, reset parser, repo discovery,
-                  # git worktree/branch helpers, TUI render + display width
+bun test          # 152 tests: store concurrency + archive, herdr client
+                  # (fake socket), gate math incl. burn-down, presence,
+                  # forecast, schedule windows, reset parser, repo discovery,
+                  # git diff/worktree helpers, TUI render + display width
 bunx tsc --noEmit
 ```
 
@@ -205,7 +215,7 @@ Contributor notes (wire quirks, invariants, testing conventions) live in
 [CLAUDE.md](CLAUDE.md).
 
 Monorepo: `packages/core` (store, herdr client, quota), `packages/cli`
-(dispatcher, hooks, task commands), `packages/tui` (Ink kanban).
+(dispatcher, hooks, task commands), `packages/tui` (Ink: harvest view + board).
 
 Runtime data lives in `~/.collie/` (override with `COLLIE_HOME`).
 `COLLIE_DEBUG=1` logs raw socket frames; `COLLIE_CCUSAGE_BIN` overrides
