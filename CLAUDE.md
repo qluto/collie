@@ -188,11 +188,15 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
   and what is left in `done` with an unmerged branch is therefore work the human
   looked at and dropped, which harvest shows as `🗑 Dropped` (`x` discards,
   `u` reopens). Three constraints hold that up:
-  1. `run.baseCommit` (recorded at dispatch from the fresh checkout's HEAD) is
-     what makes "contained in HEAD" mean "landed": a branch that never got a
-     commit is contained from birth, and auto-completing it would archive a
-     task — an uncommitted plan, say — no human ever read. No baseCommit (older
-     tasks) = never auto-adopted.
+  1. The branch's BIRTH COMMIT is what makes "contained in HEAD" mean "landed":
+     a branch that never got a commit is contained from birth, and
+     auto-completing it would archive a task — an uncommitted plan, say — no
+     human ever read. `run.baseCommit` records it at dispatch; tasks dispatched
+     before that field existed fall back to `forkPoint`, the oldest reflog entry
+     ("branch: Created from …"), which unlike `merge-base` still answers AFTER
+     the branch was merged — which is exactly when it is asked. Neither
+     available (reflog expired, `logAllRefUpdates` off) = "don't know" = left
+     alone.
   2. Nothing is recorded on the task. Dropped-ness is re-derived from git every
      scan (`core/branches.ts`), so merging a dropped task's branch a week later
      un-drops it and discarding the branch ends it, with no field to go stale

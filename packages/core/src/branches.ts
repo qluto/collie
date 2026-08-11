@@ -1,7 +1,9 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { branchScanPath, hubHome } from "./paths.ts";
-import { branchState, discardBranch, dirtyState, pruneWorktrees, removeWorktree } from "./git.ts";
+import {
+  branchState, discardBranch, dirtyState, forkPoint, pruneWorktrees, removeWorktree,
+} from "./git.ts";
 import { getTask, listArchived, listTasks } from "./store.ts";
 import type { Task } from "./types.ts";
 
@@ -89,11 +91,12 @@ export function refreshBranchScan(opts?: { maxAgeSec?: number }): BranchScan {
       }
       // Merged, but a branch that never got a commit of its own is merged
       // vacuously — auto-completing it would archive a task whose result (an
-      // uncommitted plan, say) no human has read. baseCommit is what tells the
-      // two apart, and tasks dispatched before it existed answer "don't know".
-      if (task?.status === "review" && task.run?.baseCommit && task.run.baseCommit !== tip) {
-        scan.adoptable.push(id);
-      }
+      // uncommitted plan, say) no human has read. The birth commit is what
+      // tells the two apart: ours if we recorded it, else git's own reflog, and
+      // a branch whose reflog is gone too answers "don't know" and stays put.
+      if (task?.status !== "review") continue;
+      const base = task.run?.baseCommit ?? forkPoint(repo, name);
+      if (base && base !== tip) scan.adoptable.push(id);
     }
     if (seen) scan.repos.push(repo);
   }

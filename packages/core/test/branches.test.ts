@@ -74,9 +74,24 @@ describe("branch scan", () => {
     expect(getTask(empty)!.status).toBe("review");
   });
 
-  test("a task dispatched before baseCommit existed is never auto-adopted", () => {
+  test("a task dispatched before baseCommit existed falls back to the reflog", () => {
+    // The oldest reflog entry is the branch's birth commit — the same value
+    // baseCommit would hold, and still readable after the merge.
     const legacy = reviewTask({ recordBase: false });
     merge(legacy);
+    expect(refreshBranchScan({ maxAgeSec: 0 }).adoptable).toEqual([legacy]);
+  });
+
+  test("the reflog fallback keeps the empty-branch guard", () => {
+    const legacyEmpty = reviewTask({ commits: false, recordBase: false });
+    expect(refreshBranchScan({ maxAgeSec: 0 }).adoptable).toEqual([]);
+    expect(getTask(legacyEmpty)!.status).toBe("review");
+  });
+
+  test("no baseCommit and no reflog means don't know, so don't touch it", () => {
+    const id = reviewTask({ recordBase: false });
+    merge(id);
+    fs.rmSync(path.join(repo, ".git", "logs", "refs", "heads", "collie", `${id}`), { force: true });
     expect(refreshBranchScan({ maxAgeSec: 0 }).adoptable).toEqual([]);
   });
 

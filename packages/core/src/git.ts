@@ -60,6 +60,23 @@ export function headCommit(dir: string): string | null {
 }
 
 /**
+ * The commit a branch was born on, read out of git's own record of it: the
+ * oldest reflog entry is the "branch: Created from …" one, and its sha is
+ * exactly what run.baseCommit would have stored. The fallback for tasks
+ * dispatched before that field existed — and unlike merge-base it still answers
+ * after the branch has been merged, which is when the question gets asked.
+ *
+ * null when the reflog is gone (expired, cloned, `core.logAllRefUpdates` off),
+ * which has to read as "don't know" rather than "no commits of its own".
+ */
+export function forkPoint(repoRoot: string, branch: string): string | null {
+  const res = git(repoRoot, ["reflog", "show", branch, "--format=%H"]);
+  if (!res.ok) return null;
+  const entries = res.out.split("\n").filter(Boolean);
+  return entries.at(-1) ?? null;
+}
+
+/**
  * The MAIN repository containing `dir`, or null when it is not in a git
  * worktree at all. Deliberately not `--show-toplevel`: standing inside one of
  * collie's own worktrees, that answers the worktree checkout, and a task
