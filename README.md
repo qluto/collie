@@ -48,9 +48,14 @@ ghq 形式の org 階層にも対応。入力でフィルタ、↑↓で選択�
 `fraction`（既定 0.95）まで緩みます。ヘッダーに `⌛ burn-down` と表示されます。
 
 **presence**（既定 off）: `[presence] enabled = true` にすると macOS の入力アイドル
-時間がゲート信号になります。人がキーボードにいる間は full → conservative に降格、
+時間がゲート信号になります。人がマシンの前にいる間はモードが `when_present`（既定
+`paused`）で頭打ちになります。これは full ウィンドウだけでなく**すべてのウィンドウ
+に効く上限**です（full だけを降格していた頃は、日中の conservative なウィンドウでは
+presence が何もせず、目の前で作業中のユーザーにタスクが投入されていました）。
 `absent_upgrade = true` なら長時間不在のマシンはウィンドウ外でも full に昇格します
-（paused は決して昇格しません）。
+（paused は決して昇格しません）。上限が効かなかった場合も
+`presence: human at keyboard (already conservative)` と decision に残るので、
+「on なのに何もしていない」状態が off と見分けられます。
 
 **パーミッションモード**: 既定は `auto`（claude 自身の既定でもある）。分類器が
 低リスクなツール呼び出しだけを実行し、危険なものはブロックするので無人実行に向い

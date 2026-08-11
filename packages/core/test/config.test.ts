@@ -30,11 +30,11 @@ describe("config", () => {
     expect(() => parseConfig(`[quota.burn_down]\nenabled = "yes"\n`)).toThrow(ConfigError);
   });
 
-  test("presence defaults off, and only ever downgrades a full window", () => {
+  test("presence defaults off, and pauses rather than trickles when it is on", () => {
     expect(parseConfig(DEFAULT_CONFIG_TOML).presence).toEqual({
       enabled: false,
       idleThresholdMin: 20,
-      whenPresent: "conservative",
+      whenPresent: "paused",
       respectOtherAgents: true,
       absentUpgrade: false,
     });
@@ -49,7 +49,9 @@ describe("config", () => {
       respectOtherAgents: true,
       absentUpgrade: true,
     });
-    // "full" would be a no-op downgrade; the other bounds keep the probe sane
+    expect(parseConfig(`[presence]\nwhen_present = "conservative"\n`).presence.whenPresent)
+      .toBe("conservative");
+    // "full" would be a no-op ceiling; the other bounds keep the probe sane
     expect(() => parseConfig(`[presence]\nwhen_present = "full"\n`)).toThrow(ConfigError);
     expect(() => parseConfig(`[presence]\nidle_threshold_min = 0\n`)).toThrow(ConfigError);
     expect(() => parseConfig(`[presence]\nidle_threshold_min = 481\n`)).toThrow(ConfigError);

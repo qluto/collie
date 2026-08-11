@@ -150,9 +150,14 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
   and never burns.
 - **Presence** (`[presence]`, default OFF): post-processes the schedule mode,
   never replaces it. Present (input idle < threshold, or a working non-collie
-  agent when `respect_other_agents`) downgrades full → `when_present`; absent +
-  `absent_upgrade` lifts conservative → full; paused never upgrades; a failed
-  ioreg probe is "unknown" and changes nothing.
+  agent when `respect_other_agents`) caps the mode at `when_present` (default
+  `paused`) — a CEILING on every window, not a rewrite of `full` alone: capping
+  only full left presence inert through the whole working day, which is when
+  there is a human to respect. A non-binding cap still reports itself
+  (`presence: human at keyboard (already conservative)`) so "on but inert" is
+  distinguishable from "off". Absent + `absent_upgrade` lifts conservative →
+  full; paused never upgrades; a failed ioreg probe is "unknown" and changes
+  nothing.
 
 ## Non-obvious invariants
 

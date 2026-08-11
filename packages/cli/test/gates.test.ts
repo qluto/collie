@@ -102,12 +102,44 @@ describe("planTick WIP accounting", () => {
 describe("planTick presence", () => {
   test("someone else's working pane downgrades a full window", () => {
     createTask({ title: "work", repo: "/tmp", prompt: "p" });
-    const ctx = createCtx(config({}, { enabled: true }), false);
+    const ctx = createCtx(config({}, { enabled: true, whenPresent: "conservative" }), false);
     ctx.agents = [workingAgent("pane-someone-else")];
 
     const plan = withoutHidProbe(() => planTick(ctx));
     expect(plan.mode).toBe("conservative");
     expect(plan.decision).toMatch(/presence: another agent working → conservative/);
+  });
+
+  // The reported bug, end to end: a conservative default_mode is the daytime
+  // state on a machine whose full window is nightly, and presence used to have
+  // nothing to downgrade there — every queued task went out over the human's
+  // shoulder. when_present is a ceiling now, so paused actually pauses.
+  test("presence pauses dispatch in a conservative window, not just a full one", () => {
+    createTask({ title: "work", repo: "/tmp", prompt: "p" });
+    const cfg = config({}, { enabled: true, whenPresent: "paused" });
+    cfg.schedule = { windows: [], defaultMode: "conservative" };
+    const ctx = createCtx(cfg, false);
+    ctx.agents = [workingAgent("pane-someone-else")];
+
+    const plan = withoutHidProbe(() => planTick(ctx));
+    expect(plan.mode).toBe("paused");
+    expect(plan.task).toBeUndefined();
+    expect(plan.decision).toBe("presence: another agent working → paused");
+  });
+
+  // A cap that does not bind must not pause anything — but it still has to be
+  // visible, or "presence on and inert" reads exactly like "presence off".
+  test("a non-binding cap leaves the window alone and says so", () => {
+    createTask({ title: "work", repo: "/tmp", prompt: "p" });
+    const cfg = config({}, { enabled: true, whenPresent: "conservative" });
+    cfg.schedule = { windows: [], defaultMode: "conservative" };
+    const ctx = createCtx(cfg, false);
+    ctx.agents = [workingAgent("pane-someone-else")];
+
+    const plan = withoutHidProbe(() => planTick(ctx));
+    expect(plan.mode).toBe("conservative");
+    expect(plan.decision).toMatch(/^presence: another agent working \(already conservative\); /);
+    expect(plan.decision).not.toMatch(/paused/);
   });
 
   test("our own running task's pane is not 'someone else'", () => {

@@ -28,19 +28,29 @@ export interface PresenceSignals {
   othersWorking: boolean;
 }
 
+/** How much work a mode admits; presence only ever moves DOWN this ladder. */
+const STRICTNESS: Record<ScheduleMode, number> = { paused: 0, conservative: 1, full: 2 };
+
 /**
  * Post-process the schedule-resolved mode with "is a human at this machine".
  * Presence never replaces the windows — it only nudges the mode they picked:
  *
  * - disabled                                   -> passthrough, no reason
  * - paused                                     -> passthrough (never upgraded)
- * - present && full                            -> cfg.whenPresent (downgrade)
+ * - present                                    -> mode capped at cfg.whenPresent
  * - absent && absentUpgrade && conservative    -> full (opt-in upgrade)
  * - anything else                              -> passthrough
  *
  * present = keyboard touched within idleThresholdMin, or (opt-in) some other
  * agent is working in a pane collie does not own. A failed probe means
  * "unknown": only the other-agents half can fire, and an upgrade never can.
+ *
+ * whenPresent is a CEILING on every window, not a rewrite of `full` alone: the
+ * common setup is a conservative default_mode with a nightly full window, and
+ * capping only `full` left presence inert for the entire working day — a human
+ * typing at 10:00 still got tasks dispatched at them. Presence reports itself
+ * even when the cap does not bind, because "on but doing nothing" is exactly
+ * the state that was impossible to tell apart from "off".
  */
 export function applyPresence(
   mode: ScheduleMode,
@@ -55,12 +65,15 @@ export function applyPresence(
   const atKeyboard = idleSec !== null && idleSec < thresholdSec;
   const others = cfg.respectOtherAgents && signals.othersWorking;
 
-  if ((atKeyboard || others) && mode === "full") {
+  if (atKeyboard || others) {
     const why = atKeyboard ? "human at keyboard" : "another agent working";
-    return { mode: cfg.whenPresent, reason: `presence: ${why} → ${cfg.whenPresent}` };
+    if (STRICTNESS[cfg.whenPresent] < STRICTNESS[mode]) {
+      return { mode: cfg.whenPresent, reason: `presence: ${why} → ${cfg.whenPresent}` };
+    }
+    return { mode, reason: `presence: ${why} (already ${mode})` };
   }
 
-  const absent = idleSec !== null && idleSec >= thresholdSec && !others;
+  const absent = idleSec !== null && idleSec >= thresholdSec;
   if (absent && cfg.absentUpgrade && mode === "conservative") {
     return { mode: "full", reason: `presence: idle ${Math.round(idleSec / 60)}m → full` };
   }

@@ -109,7 +109,7 @@ export interface Config {
     enabled: boolean;
     /** input idle below this = a human is here */
     idleThresholdMin: number;
-    /** what a full window degrades to while someone is present */
+    /** ceiling on the schedule's mode while someone is present (any window) */
     whenPresent: "conservative" | "paused";
     /** count a working non-collie agent as presence */
     respectOtherAgents: boolean;

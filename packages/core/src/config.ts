@@ -21,13 +21,14 @@ default_mode = "conservative"   # applies outside all windows
 
 [presence]
 # macOS input-idle as a dispatch signal. Post-processes the schedule mode:
-# a human at the keyboard downgrades full -> when_present; absent_upgrade
-# lets a long-idle machine run full outside its windows. paused never
-# upgrades. Off by default: turning your daytime machine into a dispatch
-# target should be a decision, not an update.
+# while a human is here the mode is capped at when_present — a ceiling on
+# EVERY window, not just full ones — and absent_upgrade lets a long-idle
+# machine run full outside its windows. paused never upgrades. Off by
+# default: turning your daytime machine into a dispatch target should be a
+# decision, not an update.
 enabled = false
 idle_threshold_min = 20
-when_present = "conservative"     # conservative|paused
+when_present = "paused"           # conservative|paused; paused = no new work while you are here
 respect_other_agents = true       # a working non-collie agent counts as "present"
 absent_upgrade = false
 
@@ -101,7 +102,7 @@ export const DEFAULT_CONFIG: Config = {
   presence: {
     enabled: false,
     idleThresholdMin: 20,
-    whenPresent: "conservative",
+    whenPresent: "paused",
     respectOtherAgents: true,
     absentUpgrade: false,
   },
@@ -137,7 +138,7 @@ export const DEFAULT_CONFIG: Config = {
 export class ConfigError extends Error {}
 
 const MODES: ScheduleMode[] = ["full", "conservative", "paused"];
-/** Presence only ever downgrades a full window — "full" here would be a no-op. */
+/** Presence only ever caps the mode — "full" here would be a no-op ceiling. */
 const WHEN_PRESENT = ["conservative", "paused"] as const;
 const SIZES: TaskSize[] = ["S", "M", "L"];
 /** Mirrors `claude --permission-mode`, plus the legacy `default` alias. */

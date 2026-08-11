@@ -26,7 +26,7 @@ function sectionsOf(c: Config): Section[] {
     c.schedule.windows.map((w) => `${w.start}-${w.end} ${w.mode}`).join(" · ") || "(no windows)";
   const presence = c.presence.enabled
     ? [
-        `on · idle < ${c.presence.idleThresholdMin}min = present → full becomes ${c.presence.whenPresent}`,
+        `on · idle < ${c.presence.idleThresholdMin}min = present → every window capped at ${c.presence.whenPresent}`,
         `other agents count: ${c.presence.respectOtherAgents ? "yes" : "no"} · absent upgrade: ${c.presence.absentUpgrade ? "on" : "off"}`,
       ]
     : ["off · the schedule decides alone"];

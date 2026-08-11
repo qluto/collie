@@ -17,8 +17,9 @@ const IOREG = `+-o Root  <class IORegistryEntry, id 0x100000100, retain 39>
       | }
 `;
 
+/** Enabled, and capping at conservative unless a test says otherwise. */
 function cfg(over: Partial<Config["presence"]> = {}): Config["presence"] {
-  return { ...DEFAULT_CONFIG.presence, enabled: true, ...over };
+  return { ...DEFAULT_CONFIG.presence, enabled: true, whenPresent: "conservative", ...over };
 }
 
 function signals(idleSec: number | null, othersWorking = false): PresenceSignals {
@@ -70,6 +71,30 @@ describe("applyPresence", () => {
     expect(applyPresence("full", signals(30 * MIN), cfg())).toEqual({ mode: "full" });
   });
 
+  // The bug this ladder replaced: capping only `full` left presence inert
+  // every daytime hour, which is when there is a human to respect.
+  test("when_present = paused also pauses a conservative window", () => {
+    const r = applyPresence("conservative", signals(3 * MIN), cfg({ whenPresent: "paused" }));
+    expect(r.mode).toBe("paused");
+    expect(r.reason).toBe("presence: human at keyboard → paused");
+  });
+
+  test("a cap that does not bind leaves the mode alone but still says so", () => {
+    const r = applyPresence("conservative", signals(3 * MIN), cfg());
+    expect(r.mode).toBe("conservative");
+    expect(r.reason).toBe("presence: human at keyboard (already conservative)");
+  });
+
+  test("presence never raises a mode, whatever when_present says", () => {
+    for (const whenPresent of ["conservative", "paused"] as const) {
+      for (const mode of ["full", "conservative", "paused"] as ScheduleMode[]) {
+        const r = applyPresence(mode, signals(1 * MIN), cfg({ whenPresent }));
+        expect(["full", "conservative", "paused"].indexOf(r.mode))
+          .toBeGreaterThanOrEqual(["full", "conservative", "paused"].indexOf(mode));
+      }
+    }
+  });
+
   test("another working agent counts as presence even with no idle reading", () => {
     const r = applyPresence("full", signals(null, true), cfg());
     expect(r.mode).toBe("conservative");
@@ -93,7 +118,8 @@ describe("applyPresence", () => {
 
   test("a working agent blocks the upgrade even when the keyboard is cold", () => {
     const r = applyPresence("conservative", signals(34 * MIN, true), cfg({ absentUpgrade: true }));
-    expect(r).toEqual({ mode: "conservative" });
+    expect(r.mode).toBe("conservative");
+    expect(r.reason).toBe("presence: another agent working (already conservative)");
   });
 
   test("a failed probe never upgrades", () => {
