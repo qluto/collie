@@ -1,8 +1,8 @@
 import * as fs from "node:fs";
 import { parseArgs } from "node:util";
 import {
-  archivedTaskFilePath, commitsAhead, deleteMergedBranch, dirtyFiles, ensureDataDirs, listTasks,
-  mergedBranches, removeWorktree, taskFilePath, withLock,
+  archivedTaskFilePath, commitsAhead, deleteMergedBranch, dirtyState, ensureDataDirs, listTasks,
+  localBranches, mergedBranches, pruneWorktrees, removeWorktree, taskFilePath, withLock,
   type Task,
 } from "@collie/core";
 
@@ -12,58 +12,119 @@ interface Verdict {
   done: boolean;
 }
 
+interface Sweep {
+  verdicts: Verdict[];
+  /** Finished tasks with nothing left to collect — counted, never listed. */
+  clean: number;
+}
+
+interface RepoView {
+  branches: Set<string>;
+  merged: Set<string>;
+}
+
 /**
  * A finished task leaves two things behind: the worktree checkout and the
  * `collie/<id>` branch. The checkout is disposable once it is clean (the
  * commits live in the repo, not the checkout), but the branch is the work
  * itself — so only branches already contained in the repo's HEAD are deleted.
  * `git branch -d` refuses anything else, which is the real safety net here.
+ *
+ * A task earns a verdict ONLY while something collectable survives. The archive
+ * grows forever, so a task whose branch a human already merged and deleted by
+ * hand must drop out of the report entirely rather than reappear every run —
+ * gc's output has to stay short enough to be read.
  */
-function collect(dryRun: boolean): Verdict[] {
+function collect(dryRun: boolean, force: boolean): Sweep {
   const finished = listTasks({ status: ["done", "failed"], includeArchived: true })
     .filter((t) => t.worktree && t.branch);
-  const mergedByRepo = new Map<string, Set<string>>();
-  const merged = (repo: string) => {
-    if (!mergedByRepo.has(repo)) mergedByRepo.set(repo, new Set(mergedBranches(repo)));
-    return mergedByRepo.get(repo)!;
+  const views = new Map<string, RepoView>();
+  const view = (repo: string): RepoView => {
+    if (!views.has(repo)) {
+      // Prune FIRST: a checkout a human deleted with rm leaves an admin entry,
+      // and git refuses to delete a branch "used by" it — the branch would be
+      // stuck for good. Prune only forgets worktrees already gone from disk.
+      if (!dryRun) pruneWorktrees(repo);
+      views.set(repo, { branches: new Set(localBranches(repo)), merged: new Set(mergedBranches(repo)) });
+    }
+    return views.get(repo)!;
   };
 
-  return finished.map((task) => {
+  const sweep: Sweep = { verdicts: [], clean: 0 };
+  for (const task of finished) {
     const branch = task.branch!;
-    if (!fs.existsSync(task.repo)) return { task, action: `repo is gone (${task.repo})`, done: false };
+    const wt = task.run?.worktreePath;
+    const checkoutLeft = !!wt && fs.existsSync(wt);
+    // A repo that is gone took its branches and checkouts with it; there is
+    // nothing left for gc to act on, now or on any future run.
+    if (!fs.existsSync(task.repo)) {
+      sweep.clean++;
+      continue;
+    }
+    const { branches, merged } = view(task.repo);
+    const branchLeft = branches.has(branch);
+    if (!branchLeft && !checkoutLeft) {
+      sweep.clean++;
+      continue;
+    }
 
     // The branch cannot be deleted while a checkout still holds it. Removing the
     // checkout is safe on its own — the commits live in the repo, not here.
     let checkout = "";
-    const wt = task.run?.worktreePath;
-    if (wt && fs.existsSync(wt)) {
-      const dirty = dirtyFiles(wt);
-      if (dirty.length > 0) {
-        return { task, action: `worktree has ${dirty.length} uncommitted file(s): ${wt}`, done: false };
+    if (checkoutLeft) {
+      const { tracked, untracked } = dirtyState(wt!);
+      if (tracked.length > 0) {
+        // Not forceable: --force would delete work git cannot get back.
+        sweep.verdicts.push({
+          task,
+          action: `kept worktree: ${tracked.length} uncommitted change(s) in ${wt}`,
+          done: false,
+        });
+        continue;
       }
+      if (untracked.length > 0 && !force) {
+        sweep.verdicts.push({
+          task,
+          action: `kept worktree: ${untracked.length} untracked file(s) in ${wt} (--force to delete)`,
+          done: false,
+        });
+        continue;
+      }
+      const forced = untracked.length > 0;
       if (dryRun) {
-        checkout = "would remove worktree; ";
+        checkout = forced ? `would remove worktree (+${untracked.length} untracked); ` : "would remove worktree; ";
       } else {
-        const res = removeWorktree(task.repo, wt);
-        if (!res.ok) return { task, action: `worktree remove failed: ${res.err}`, done: false };
-        checkout = "worktree removed; ";
+        const res = removeWorktree(task.repo, wt!, { force: forced });
+        if (!res.ok) {
+          sweep.verdicts.push({ task, action: `worktree remove failed: ${res.err}`, done: false });
+          continue;
+        }
+        checkout = forced ? `worktree removed (+${untracked.length} untracked); ` : "worktree removed; ";
       }
     }
 
-    if (!merged(task.repo).has(branch)) {
-      const ahead = commitsAhead(task.repo, branch).length;
-      return {
-        task,
-        action: `${checkout}kept ${branch}: not merged (${ahead} commit(s) ahead of HEAD)`,
-        done: false,
-      };
+    if (!branchLeft) {
+      // Nothing else to do: the checkout above was the whole residue.
+      sweep.verdicts.push({ task, action: `${checkout}branch ${branch} was already gone`, done: true });
+      continue;
     }
-    if (dryRun) return { task, action: `${checkout}would delete merged branch ${branch}`, done: true };
+    if (!merged.has(branch)) {
+      const ahead = commitsAhead(task.repo, branch);
+      const why = ahead === null ? "not merged" : `not merged (${ahead.length} commit(s) ahead of HEAD)`;
+      sweep.verdicts.push({ task, action: `${checkout}kept ${branch}: ${why}`, done: false });
+      continue;
+    }
+    if (dryRun) {
+      sweep.verdicts.push({ task, action: `${checkout}would delete merged branch ${branch}`, done: true });
+      continue;
+    }
     const res = deleteMergedBranch(task.repo, branch);
-    return res.ok
+    sweep.verdicts.push(res.ok
       ? { task, action: `${checkout}deleted merged branch ${branch}`, done: true }
-      : { task, action: `${checkout}branch delete failed: ${res.err}`, done: false };
-  });
+      : { task, action: `${checkout}branch delete failed: ${res.err}`, done: false });
+  }
+
+  return sweep;
 }
 
 /**
@@ -82,22 +143,28 @@ function sweepDoneIntoArchive(dryRun: boolean): string[] {
   );
 }
 
-/** `collie gc [--dry-run]` — drop worktrees and merged branches of finished tasks. */
+/** `collie gc [--dry-run] [--force]` — drop worktrees and merged branches of finished tasks. */
 export function runGcCommand(argv: string[]): number {
   const { values } = parseArgs({
     args: argv,
-    options: { "dry-run": { type: "boolean", default: false } },
+    options: {
+      "dry-run": { type: "boolean", default: false },
+      force: { type: "boolean", default: false },
+    },
   });
-  for (const line of sweepDoneIntoArchive(values["dry-run"]!)) console.log(`✓ ${line}`);
-  const verdicts = collect(values["dry-run"]!);
-  if (verdicts.length === 0) {
-    console.log("nothing to collect (no finished worktree tasks)");
-    return 0;
-  }
+  const dryRun = values["dry-run"]!;
+  for (const line of sweepDoneIntoArchive(dryRun)) console.log(`✓ ${line}`);
+
+  const { verdicts, clean } = collect(dryRun, values.force!);
   for (const v of verdicts) {
     console.log(`${v.done ? "✓" : "·"} ${v.task.id}  ${v.action}`);
   }
-  const cleaned = verdicts.filter((v) => v.done).length;
-  console.log(`${cleaned}/${verdicts.length} cleaned${values["dry-run"] ? " (dry run)" : ""}`);
+  const already = clean > 0 ? ` · ${clean} already clean` : "";
+  const suffix = `${already}${dryRun ? " (dry run)" : ""}`;
+  if (verdicts.length === 0) {
+    console.log(`nothing to collect${clean > 0 ? ` (${clean} finished task(s) already clean)` : ""}`);
+    return 0;
+  }
+  console.log(`${verdicts.filter((v) => v.done).length}/${verdicts.length} cleaned${suffix}`);
   return 0;
 }

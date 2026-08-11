@@ -20,7 +20,9 @@ Usage:
   collie done [<id>] [--close]   # review -> done; id defaults to the task
                             # owning $COLLIE_TASK_ID or the focused herdr pane.
                             # --close also removes the worktree / closes the pane
-  collie gc [--dry-run]     # drop finished tasks' worktrees and merged branches
+  collie gc [--dry-run] [--force]
+                            # drop finished tasks' worktrees and merged branches;
+                            # --force also deletes untracked files in a worktree
   collie dispatcher run [--once] [--verbose] | status
   collie dispatcher install | restart | uninstall     (launchd)
   collie new [--popup]      # the capture form alone, for a herdr popup keybinding

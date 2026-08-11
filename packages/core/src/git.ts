@@ -29,6 +29,17 @@ export function mergedBranches(repoRoot: string): string[] {
 }
 
 /**
+ * Every local branch name. gc asks "does this branch still exist?" once per
+ * repo instead of once per task: a human who merged and deleted a collie branch
+ * by hand leaves nothing behind, and that has to read as "already collected",
+ * never as an unanswerable question.
+ */
+export function localBranches(repoRoot: string): string[] {
+  const res = git(repoRoot, ["branch", "--format=%(refname:short)"]);
+  return res.ok ? res.out.split("\n").map((b) => b.trim()).filter(Boolean) : [];
+}
+
+/**
  * The MAIN repository containing `dir`, or null when it is not in a git
  * worktree at all. Deliberately not `--show-toplevel`: standing inside one of
  * collie's own worktrees, that answers the worktree checkout, and a task
@@ -43,17 +54,42 @@ export function repoRootOf(dir: string): string | null {
   return common.out.endsWith("/.git") ? common.out.slice(0, -"/.git".length) : null;
 }
 
-/** Uncommitted or untracked files in a worktree; empty means safe to remove. */
-export function dirtyFiles(worktreePath: string): string[] {
-  if (!fs.existsSync(worktreePath)) return [];
-  const res = git(worktreePath, ["status", "--porcelain"]);
-  return res.ok ? res.out.split("\n").filter(Boolean) : [];
+export interface DirtyState {
+  /** Modified/staged/deleted files under version control — losing these loses work. */
+  tracked: string[];
+  /** `??` files: build output, scratch notes, an agent's AGENTS.md. */
+  untracked: string[];
 }
 
-/** Commit subjects on `branch` that HEAD does not have. */
-export function commitsAhead(repoRoot: string, branch: string): string[] {
+/**
+ * Split rather than counted, because the two halves carry different risk: a
+ * tracked change is work git cannot get back, while untracked files are usually
+ * residue. gc stops dead on the former and needs `--force` for the latter.
+ */
+export function dirtyState(worktreePath: string): DirtyState {
+  if (!fs.existsSync(worktreePath)) return { tracked: [], untracked: [] };
+  const res = git(worktreePath, ["status", "--porcelain"]);
+  const lines = res.ok ? res.out.split("\n").filter(Boolean) : [];
+  return {
+    tracked: lines.filter((l) => !l.startsWith("??")),
+    untracked: lines.filter((l) => l.startsWith("??")),
+  };
+}
+
+/** Uncommitted or untracked files in a worktree; empty means safe to remove. */
+export function dirtyFiles(worktreePath: string): string[] {
+  const { tracked, untracked } = dirtyState(worktreePath);
+  return [...tracked, ...untracked];
+}
+
+/**
+ * Commit subjects on `branch` that HEAD does not have — null when the question
+ * could not be asked at all (branch gone, repo moved). Answering [] there would
+ * report a vanished branch as "0 commits ahead", i.e. as unmerged work.
+ */
+export function commitsAhead(repoRoot: string, branch: string): string[] | null {
   const res = git(repoRoot, ["log", "--oneline", `HEAD..${branch}`]);
-  return res.ok ? res.out.split("\n").filter(Boolean) : [];
+  return res.ok ? res.out.split("\n").filter(Boolean) : null;
 }
 
 /** " 3 files changed, 120 insertions(+), 8 deletions(-)" -> "3 files +120 −8". */
@@ -83,7 +119,7 @@ export function diffSummary(
   if (branch) {
     const res = git(repoRoot, ["diff", "--shortstat", `HEAD...${branch}`]);
     if (!res.ok) return null;
-    const commits = commitsAhead(repoRoot, branch).length;
+    const commits = (commitsAhead(repoRoot, branch) ?? []).length;
     const parts = [
       commits > 0 ? `${commits} commit${commits === 1 ? "" : "s"}` : "",
       formatShortstat(res.out) ?? "",
@@ -101,9 +137,25 @@ export function diffSummary(
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
-/** git worktree remove — refuses on a dirty checkout unless forced. */
-export function removeWorktree(repoRoot: string, worktreePath: string): GitResult {
-  return git(repoRoot, ["worktree", "remove", worktreePath]);
+/**
+ * git worktree remove — refuses on a dirty checkout unless forced. `force`
+ * DELETES untracked files outright, so the caller owes the human that decision;
+ * it is never inferred here.
+ */
+export function removeWorktree(
+  repoRoot: string,
+  worktreePath: string,
+  opts?: { force?: boolean },
+): GitResult {
+  return git(repoRoot, ["worktree", "remove", ...(opts?.force ? ["--force"] : []), worktreePath]);
+}
+
+/**
+ * Drops admin entries for checkouts whose directory a human deleted by hand.
+ * Safe by construction: prune only forgets worktrees that are already gone.
+ */
+export function pruneWorktrees(repoRoot: string): GitResult {
+  return git(repoRoot, ["worktree", "prune"]);
 }
 
 /** `git branch -d`: safe by construction, it refuses unmerged branches. */

@@ -4,7 +4,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
-  commitsAhead, deleteMergedBranch, diffSummary, dirtyFiles, mergedBranches, removeWorktree,
+  commitsAhead, deleteMergedBranch, diffSummary, dirtyFiles, dirtyState, localBranches,
+  mergedBranches, pruneWorktrees, removeWorktree,
 } from "../src/git.ts";
 
 let repo: string;
@@ -39,10 +40,26 @@ describe("git helpers", () => {
     const merged = mergedBranches(repo);
     expect(merged).toContain("collie/merged");
     expect(merged).not.toContain("collie/ahead");
-    expect(commitsAhead(repo, "collie/ahead").length).toBe(1);
+    expect(commitsAhead(repo, "collie/ahead")!.length).toBe(1);
 
     removeWorktree(repo, wt);
     expect(fs.existsSync(wt)).toBe(false);
+  });
+
+  test("a vanished branch is null, not zero commits ahead", () => {
+    // gc reads "0 ahead" as unmerged work it must keep; a branch a human already
+    // merged and deleted has to be distinguishable from that.
+    expect(commitsAhead(repo, "collie/never-existed")).toBeNull();
+    run(repo, "branch", "collie/merged");
+    expect(commitsAhead(repo, "collie/merged")).toEqual([]);
+  });
+
+  test("localBranches answers what still exists", () => {
+    run(repo, "branch", "collie/one");
+    expect(localBranches(repo)).toEqual(expect.arrayContaining(["main", "collie/one"]));
+    run(repo, "branch", "-D", "collie/one");
+    expect(localBranches(repo)).not.toContain("collie/one");
+    expect(localBranches(path.join(repo, "nope"))).toEqual([]);
   });
 
   test("deleteMergedBranch refuses an unmerged branch and accepts a merged one", () => {
@@ -100,5 +117,31 @@ describe("git helpers", () => {
     expect(fs.existsSync(wt)).toBe(true);
     fs.rmSync(path.join(wt, "scratch.txt"));
     expect(removeWorktree(repo, wt).ok).toBe(true);
+  });
+
+  test("dirtyState separates work-at-risk from residue, and --force removes only residue", () => {
+    const wt = path.join(repo, "..", path.basename(repo) + "-wt5");
+    run(repo, "worktree", "add", "-q", "-b", "collie/residue", wt);
+    fs.writeFileSync(path.join(wt, "AGENTS.md"), "notes\n");
+    expect(dirtyState(wt)).toEqual({ tracked: [], untracked: ["?? AGENTS.md"] });
+
+    fs.writeFileSync(path.join(wt, "README.md"), "edited\n");
+    const both = dirtyState(wt);
+    expect(both.tracked.length).toBe(1);
+    expect(both.untracked.length).toBe(1);
+    expect(dirtyFiles(wt).length).toBe(2);
+
+    expect(removeWorktree(repo, wt, { force: true }).ok).toBe(true); // force takes both
+    expect(fs.existsSync(wt)).toBe(false);
+    expect(dirtyState(path.join(repo, "gone"))).toEqual({ tracked: [], untracked: [] });
+  });
+
+  test("pruneWorktrees forgets a checkout deleted by hand", () => {
+    const wt = path.join(repo, "..", path.basename(repo) + "-wt6");
+    run(repo, "worktree", "add", "-q", "-b", "collie/rmrf", wt);
+    fs.rmSync(wt, { recursive: true });
+    expect(run(repo, "worktree", "list", "--porcelain")).toContain(wt);
+    expect(pruneWorktrees(repo).ok).toBe(true);
+    expect(run(repo, "worktree", "list", "--porcelain")).not.toContain(wt);
   });
 });

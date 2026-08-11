@@ -182,6 +182,18 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
   question must not linger. Harvest's `a` answers via `agent.send` + explicit
   `pane.send_keys` Enter and leaves status alone (the stop hook unblocks).
 
+- `collie gc` reports a task ONLY while something collectable survives: the
+  archive grows forever, so "branch already deleted by a human" has to drop out
+  of the output (counted as `already clean`) rather than reappear every run.
+  Three things make that hold — `localBranches` (one list per repo) answers
+  "does the branch still exist" BEFORE any merge question; `commitsAhead`
+  returns null, not `[]`, when it could not ask (a vanished branch used to read
+  as "0 commits ahead", i.e. as unmerged work); and `worktree prune` runs per
+  repo BEFORE branch deletion, because a checkout deleted with `rm` leaves an
+  admin entry and `git branch -d` refuses a branch "used by" it — pruning
+  afterwards would wedge that branch for good. `dirtyState` splits the two
+  risks: tracked changes stop gc dead (`--force` included), untracked files
+  only need `--force`, which deletes them outright.
 - Requeueing MUST clear `run.paneId` (see `requeueOrFail`) — the dispatch
   candidate filter skips tasks with a paneId (half-spawn adoption guard) and a
   stale one starves the task forever. It must ALSO `pane.close` the pane when
