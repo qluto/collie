@@ -17,7 +17,7 @@ const GROUPS: Array<{ label: string; status: TaskStatus; color: string }> = [
 
 /** key + what it does, so the footer can light the keys up and still read as one line. */
 const FOOTER_KEYS: Array<[string, string]> = [
-  ["d", "done"], ["a", "answer"], ["J", "jump"], ["r", "retry"],
+  ["d", "done"], ["a", "answer"], ["J", "jump"], ["o", "resume"], ["r", "retry"],
   ["Enter", "detail"], ["n", "new"],
 ];
 const FOOTER = FOOTER_KEYS.map(([k, label]) => `${k} ${label}`).join(" · ");

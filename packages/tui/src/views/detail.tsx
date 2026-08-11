@@ -70,7 +70,8 @@ export function Detail(props: { task: Task; columns?: number; rows?: number }): 
       </Box>
       <Text dimColor>
         {truncateToWidth(
-          `Esc back · e edit${task.run?.paneId ? " · g jump · y copy" : ""}`,
+          `Esc back · e edit${task.run?.paneId ? " · g jump · y copy" : ""}`
+          + (task.run?.sessionId ? " · o resume session" : ""),
           width,
         )}
       </Text>

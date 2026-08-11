@@ -257,7 +257,8 @@ describe("Harvest", () => {
       <Harvest tasks={[task({ id: "t-1", status: "review" })]} focusIdx={0} columns={80} rows={24}
         diffFor={noDiff} questionFor={noQuestion} />,
     );
-    expect(lastFrame()!).toContain("d done · a answer · J jump · r retry · Enter detail · n new");
+    expect(lastFrame()!)
+      .toContain("d done · a answer · J jump · o resume · r retry · Enter detail · n new");
   });
 });
 
