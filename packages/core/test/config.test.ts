@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { parseConfig, DEFAULT_CONFIG_TOML, ConfigError } from "../src/config.ts";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { parseConfig, loadConfig, DEFAULT_CONFIG_TOML, ConfigError } from "../src/config.ts";
+import { configPath, tasksDir } from "../src/paths.ts";
 
 describe("config", () => {
   test("default template parses to expected values", () => {
@@ -89,5 +93,38 @@ describe("config", () => {
     expect(() => parseConfig(`[schedule]\ndefault_mode = "turbo"\n`)).toThrow(ConfigError);
     expect(() => parseConfig(`[[schedule.windows]]\nstart = "25:00"\nend = "07:00"\nmode = "full"\n`)).toThrow(ConfigError);
     expect(() => parseConfig(`not toml [`)).toThrow(ConfigError);
+  });
+});
+
+describe("first run", () => {
+  // Never the real ~/.collie: this describe WRITES config files.
+  const freshHome = (create: boolean): string => {
+    const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "collie-firstrun-")), "collie");
+    if (create) fs.mkdirSync(dir, { recursive: true });
+    process.env.COLLIE_HOME = dir;
+    return dir;
+  };
+
+  test("a machine with no ~/.collie at all gets the tree and the default config", () => {
+    const home = freshHome(false);
+    expect(fs.existsSync(home)).toBe(false);
+
+    const c = loadConfig();
+
+    expect(fs.readFileSync(configPath(), "utf8")).toBe(DEFAULT_CONFIG_TOML);
+    expect(fs.existsSync(tasksDir())).toBe(true); // the rest of the tree too
+    expect(c.dispatch.wipLimit).toBe(2);
+    expect(c.presence.enabled).toBe(false);
+  });
+
+  test("an existing config is never overwritten by the template", () => {
+    freshHome(true);
+    fs.writeFileSync(configPath(), `[dispatch]\nwip_limit = 7\n`);
+
+    expect(loadConfig().dispatch.wipLimit).toBe(7);
+    expect(fs.readFileSync(configPath(), "utf8")).toBe(`[dispatch]\nwip_limit = 7\n`);
+    // a file that predates a feature keeps working: the missing keys default
+    expect(loadConfig().presence.enabled).toBe(false);
+    expect(loadConfig().quota.burnDown.enabled).toBe(true);
   });
 });

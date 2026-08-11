@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import { parse as parseToml } from "smol-toml";
-import { configPath, expandTilde } from "./paths.ts";
+import { configPath, ensureDataDirs, expandTilde } from "./paths.ts";
 import type { Config, PermissionMode, ScheduleMode, ScheduleWindow, TaskSize } from "./types.ts";
 
 export const DEFAULT_CONFIG_TOML = `[dispatch]
@@ -290,15 +290,28 @@ export function parseConfig(toml: string): Config {
 /**
  * Load config from ~/.collie/config.toml. Writes the default template on
  * first run so the user has something to edit. Throws ConfigError when invalid.
+ *
+ * Only a MISSING file is bootstrapped, and only ever with "wx": an existing
+ * config is the user's, and the template must never land on top of it. That
+ * also means a config written before a feature existed never grows its section
+ * — every key falls back to DEFAULT_CONFIG instead (see `pick`).
  */
 export function loadConfig(): Config {
   const p = configPath();
   let toml: string;
   try {
     toml = fs.readFileSync(p, "utf8");
-  } catch {
-    fs.writeFileSync(p, DEFAULT_CONFIG_TOML);
-    toml = DEFAULT_CONFIG_TOML;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    // First run: $COLLIE_HOME itself may not exist yet, so the template write
+    // has to create the tree before it can land.
+    ensureDataDirs();
+    try {
+      fs.writeFileSync(p, DEFAULT_CONFIG_TOML, { flag: "wx" });
+    } catch (raced) {
+      if ((raced as NodeJS.ErrnoException).code !== "EEXIST") throw raced;
+    }
+    toml = fs.readFileSync(p, "utf8");
   }
   return parseConfig(toml);
 }

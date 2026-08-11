@@ -115,6 +115,12 @@ frames), `COLLIE_CCUSAGE_BIN` (fixture script instead of real ccusage).
   power). `defer` no longer exists — a task in collie is by definition
   unattended, night-eligible work. New task fields need a `?? default` in
   `parseTaskFile` — existing files on disk predate them.
+- Same for config: `loadConfig` writes `DEFAULT_CONFIG_TOML` only when the file
+  is MISSING (with `wx`, after `ensureDataDirs` — a fresh machine has no
+  `~/.collie` yet), so a config written before a feature never grows its
+  section. Every key must survive absence via `pick(..., DEFAULT_CONFIG.x)`,
+  and the Config tab shows the EFFECTIVE value, not the file's text — "presence
+  off" there with no `[presence]` block on disk is the defaults working.
 - WIP counts `running` only — a task blocked on a question burns no tokens, so
   it must not starve the night. `dispatch.asking_limit` (min 1; 0 would pause
   dispatch forever) backstops the pile of unanswered questions instead.

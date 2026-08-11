@@ -498,3 +498,28 @@ Plan: /Users/qluto/.claude/plans/temporal-crafting-badger.md
 
 実機: temp COLLIE_HOME + herdr の使い捨て workspace（close 済み）で harvest 折りたたみ /
 展開 / config を目視。日本語タイトルと絵文字混在でも桁ズレなし。
+
+# 初回インストールの config 生成 / presence の在り処
+
+きっかけ: Config タブに `presence off` と出るのに `~/.collie/config.toml` に
+`[presence]` が無い、という指摘。原因は仕様どおり（`pick` がデフォルトで埋める、
+`loadConfig` は**ファイルが無いときだけ**テンプレートを書く）だが、初回インストールが
+実は壊れていた。
+
+- [x] `loadConfig`: ENOENT のときだけブートストラップするよう明示（今までは read の
+      失敗を全部握りつぶしてテンプレートで上書きしていた）。`ensureDataDirs()` を先に
+      呼ぶ — `~/.collie` 自体が無い新品マシンでは writeFileSync が ENOENT で落ちて
+      いた（`doctor` と dispatcher は自前で ensureDataDirs していたので露見せず、
+      `collie done` などの経路だけが死ぬ状態だった）。`wx` フラグで、既存ファイルや
+      競合して生まれたファイルには絶対に被せない。
+- [x] テスト 2件: `~/.collie` ごと存在しない状態からの初回起動（tree + config.toml
+      生成、デフォルト値）、既存 config を上書きしないこと（＝機能より古い config は
+      新セクションが生えず、欠けたキーはデフォルトになる）
+- [x] CLAUDE.md に「config も task ファイルと同じで、既存ファイルは新セクションを
+      得ない。Config タブが出すのは実効値であってファイルの文面ではない」を追記
+- [x] ユーザーの `~/.collie/config.toml` に `[presence]` をコメントアウトで追記
+      （リポジトリ外。追記後に loadConfig でパース確認済み）
+
+- [x] 同じ理由で載っていなかった `dispatch.asking_limit` / `[quota.burn_down]` /
+      `[forecast]` / `[done]` も、実効値と同じ内容でコメントアウト追記。追記後に
+      loadConfig で全キーの値が変わっていないことを確認（コメントは無害）。
