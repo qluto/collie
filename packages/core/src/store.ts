@@ -121,6 +121,47 @@ export function listTasks(filter?: { status?: TaskStatus[]; includeArchived?: bo
   );
 }
 
+/**
+ * The archive, newest first — "what did I even do last night". The archive only
+ * ever grows, so selection is one stat per file and ONLY `limit` files are
+ * parsed; `limit: 0` degenerates to a single readdir, which is what the TUI
+ * costs while the section is folded.
+ */
+export function listArchived(limit: number): { tasks: Task[]; total: number } {
+  ensureDataDirs();
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(archiveDir()).filter((e) => e.endsWith(".md") && !e.startsWith("."));
+  } catch {
+    return { tasks: [], total: 0 };
+  }
+  const newest = entries
+    .map((entry) => {
+      const p = path.join(archiveDir(), entry);
+      let mtimeMs = 0;
+      try {
+        mtimeMs = fs.statSync(p).mtimeMs;
+      } catch {
+        // raced with a rename; sorts last and is skipped if it stays gone
+      }
+      return { p, mtimeMs };
+    })
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .slice(0, Math.max(0, limit));
+
+  const tasks: Task[] = [];
+  for (const { p } of newest) {
+    try {
+      tasks.push(parseTaskFile(fs.readFileSync(p, "utf8"), p));
+    } catch {
+      // unparseable or vanished: skip rather than take the view down
+    }
+  }
+  // mtime picks which files are new; what a human means by "recent" is endedAt
+  tasks.sort((a, b) => (b.endedAt ?? b.updatedAt).localeCompare(a.endedAt ?? a.updatedAt));
+  return { tasks, total: entries.length };
+}
+
 export function getTask(id: string): Task | null {
   ensureDataDirs();
   return readTask(id);

@@ -40,9 +40,9 @@ describe("Harvest", () => {
         diffFor={(t) => (t.id === "t-1" ? "2 commits · 3 files +120 −8" : null)} questionFor={noQuestion} />,
     );
     const frame = lastFrame()!;
-    expect(frame).toContain("✅ Review 2");
-    expect(frame).toContain("❓ Asking 1");
-    expect(frame).toContain("✗ Failed 1");
+    expect(frame).toContain("✅ Review  2");
+    expect(frame).toContain("❓ Asking  1");
+    expect(frame).toContain("❌ Failed  1");
     expect(frame).toContain("parser rewritten");
     expect(frame).toContain("2 commits · 3 files +120 −8");
     expect(frame).toContain("which migration?");
@@ -129,6 +129,102 @@ describe("Harvest", () => {
     expect(lastFrame()!).toContain("nothing to harvest");
   });
 
+  test("groups are separated by a blank line when the harvest fits, never when it does not", () => {
+    const tasks = [
+      task({ id: "t-1", status: "review", title: "reviewed" }),
+      task({ id: "t-2", status: "blocked", title: "asking", run: { question: "which?" } }),
+      task({ id: "t-3", status: "failed", title: "broken", run: { failureReason: "spawn_timeout" } }),
+    ];
+    const roomy = render(
+      <Harvest tasks={tasks} focusIdx={0} columns={80} rows={24} diffFor={noDiff} questionFor={noQuestion} />,
+    ).lastFrame()!.split("\n");
+    // one above each of the two later group headers, one above the footer
+    expect(roomy.filter((l) => l.trim() === "").length).toBe(3);
+    expect(roomy[0]!.trim()).not.toBe(""); // the view never opens on a blank row
+
+    const tight = render(
+      <Harvest tasks={tasks} focusIdx={0} columns={80} rows={9} diffFor={noDiff} questionFor={noQuestion} />,
+    ).lastFrame()!.split("\n");
+    expect(tight.filter((l) => l.trim() === "").length).toBe(0);
+    expect(tight.length).toBeLessThanOrEqual(9);
+  });
+
+  test("folded, the archive is one line: a count and the key that opens it", () => {
+    const { lastFrame } = render(
+      <Harvest tasks={[task({ id: "t-1", status: "review", title: "live one" })]} focusIdx={0}
+        columns={80} rows={24} diffFor={noDiff} questionFor={noQuestion}
+        archived={[]} archivedTotal={42} archiveOpen={false} />,
+    );
+    const frame = lastFrame()!;
+    expect(frame).toContain("📦 Done  42 · A to open");
+    expect(frame).toContain("live one");
+  });
+
+  test("an empty archive gets no line at all — even with nothing to harvest", () => {
+    const { lastFrame } = render(
+      <Harvest tasks={[]} focusIdx={0} columns={80} rows={24} diffFor={noDiff}
+        questionFor={noQuestion} archived={[]} archivedTotal={0} archiveOpen={false} />,
+    );
+    expect(lastFrame()!).toContain("nothing to harvest");
+    expect(lastFrame()!).not.toContain("📦");
+  });
+
+  test("open, the archive lists what was finished, with when and what came of it", () => {
+    const archived = [
+      task({ id: "d-1", status: "done", title: "ship the parser", endedAt: "2026-08-10T02:14:00Z",
+        run: { resultSummary: "parser rewritten" } }),
+      task({ id: "d-2", status: "done", title: "quota burn-down", endedAt: "2026-08-09T23:50:00Z" }),
+    ];
+    const { lastFrame } = render(
+      <Harvest tasks={[]} focusIdx={0} columns={80} rows={24} diffFor={noDiff}
+        questionFor={noQuestion} archived={archived} archivedTotal={7} archiveOpen />,
+    );
+    const frame = lastFrame()!;
+    expect(frame).toContain("📦 Done  7 · A to close");
+    expect(frame).not.toContain("A to open");
+    expect(frame).toContain("ship the parser");
+    expect(frame).toContain("parser rewritten");
+    expect(frame).toContain("quota burn-down");
+    // local-time stamp of endedAt, whatever the runner's zone
+    const stamp = new Date("2026-08-10T02:14:00Z");
+    const p = (n: number) => String(n).padStart(2, "0");
+    expect(frame).toContain(
+      `${p(stamp.getMonth() + 1)}-${p(stamp.getDate())} ${p(stamp.getHours())}:${p(stamp.getMinutes())}`,
+    );
+  });
+
+  test("the open archive stays inside the row budget", () => {
+    const archived = Array.from({ length: 20 }, (_, i) =>
+      task({ id: `d${i}`, status: "done", title: `finished ${i}`,
+        endedAt: "2026-08-10T02:14:00Z", run: { resultSummary: "summary" } }),
+    );
+    const live = Array.from({ length: 4 }, (_, i) =>
+      task({ id: `r${i}`, status: "review", title: `review ${i}` }),
+    );
+    for (const rows of [24, 12, 6]) {
+      const { lastFrame } = render(
+        <Harvest tasks={live} focusIdx={0} columns={80} rows={rows} diffFor={noDiff}
+          questionFor={noQuestion} archived={archived} archivedTotal={20} archiveOpen />,
+      );
+      expect(lastFrame()!.split("\n").length).toBeLessThanOrEqual(rows);
+    }
+  });
+
+  test("the folded archive line does not push the last card off the screen", () => {
+    const live = Array.from({ length: 12 }, (_, i) =>
+      task({ id: `r${i}`, status: "review", title: `review ${i}` }),
+    );
+    for (const rows of [24, 10, 5]) {
+      const { lastFrame } = render(
+        <Harvest tasks={live} focusIdx={0} columns={80} rows={rows} diffFor={noDiff}
+          questionFor={noQuestion} archived={[]} archivedTotal={9} archiveOpen={false} />,
+      );
+      const frame = lastFrame()!;
+      expect(frame.split("\n").length).toBeLessThanOrEqual(rows);
+      expect(frame).toContain("📦 Done  9 · A to open");
+    }
+  });
+
   test("footer names the one-key actions", () => {
     const { lastFrame } = render(
       <Harvest tasks={[task({ id: "t-1", status: "review" })]} focusIdx={0} columns={80} rows={24}
@@ -168,5 +264,14 @@ describe("harvestList", () => {
     ];
     expect(harvestList(tasks).map((t) => t.id)).toEqual(["r1", "r2", "b1", "f1"]);
     expect(harvestList([])).toEqual([]);
+  });
+
+  test("archived tasks are appended last, and only via the archived argument", () => {
+    const live = [task({ id: "r1", status: "review" }), task({ id: "f1", status: "failed" })];
+    const archived = [task({ id: "d1", status: "done" }), task({ id: "d2", status: "done" })];
+    expect(harvestList(live, archived).map((t) => t.id)).toEqual(["r1", "f1", "d1", "d2"]);
+    // a done task that somehow sits in the working set still drops out
+    expect(harvestList([...live, task({ id: "d3", status: "done" })]).map((t) => t.id))
+      .toEqual(["r1", "f1"]);
   });
 });

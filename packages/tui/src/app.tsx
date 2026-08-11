@@ -5,8 +5,9 @@ import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
   DEFAULT_CONFIG, blockedUntil, cancelTask, computeForecast, configPath, createTask, diffSummary,
-  discoverRepos, forecastLine, formatClock, loadConfig, markDone, readLimits, refreshLimits,
-  resolveMode, retryTask, runsDir, stripPromptTemplate, taskFilePath, transition, updateTask,
+  discoverRepos, forecastLine, formatClock, listArchived, loadConfig, markDone, readLimits,
+  refreshLimits, resolveMode, retryTask, runsDir, stripPromptTemplate, taskFilePath, transition,
+  updateTask,
 } from "@collie/core";
 import type { Config, LimitSnapshot, Task } from "@collie/core";
 import { useHubSnapshot, type HubSnapshot } from "./state.ts";
@@ -41,6 +42,9 @@ type Overlay =
  * in the worktree while the task sits in review).
  */
 const CACHE_TTL_MS = 60_000;
+
+/** How far back the opened archive reaches. Ink cannot scroll; the rest is `… +N`. */
+const ARCHIVE_LIMIT = 20;
 const evidenceCache = new Map<string, { at: number; value: string | null }>();
 
 function cached(key: string, compute: () => string | null): string | null {
@@ -130,6 +134,7 @@ function App(): React.JSX.Element {
   const [focusCol, setFocusCol] = useState(0); // start on Queued
   const [focusRow, setFocusRow] = useState(0);
   const [focusIdx, setFocusIdx] = useState(0); // harvest list cursor
+  const [archiveOpen, setArchiveOpen] = useState(false);
   const [limits, setLimits] = useState<LimitSnapshot | null>(null);
   const [flash, setFlash] = useState("");
   const [rows, setRows] = useState(process.stdout.rows ?? 24);
@@ -160,6 +165,14 @@ function App(): React.JSX.Element {
     const t = setInterval(pull, 60_000);
     return () => clearInterval(t);
   }, []);
+
+  // Done tasks live outside the snapshot on purpose: snap.tasks is the working
+  // set the board and the dispatcher reason about. Folded, this is one readdir
+  // per tick; only an open archive pays for parsing.
+  const archive = useMemo(
+    () => listArchived(archiveOpen ? ARCHIVE_LIMIT : 0),
+    [snap.refreshedAt, archiveOpen],
+  );
 
   // config.toml is a file read: once per snapshot, not once per keystroke
   const config = useMemo(() => {
@@ -273,9 +286,11 @@ function App(): React.JSX.Element {
     else if (tab === "config" && input === "e") {
       if (editFileInEditor(configPath())) refresh();
     } else if (tab === "harvest") {
-      const items = harvestList(snap.tasks);
+      const items = harvestList(snap.tasks, archive.tasks);
       const task = items[Math.min(focusIdx, items.length - 1)];
-      if (input === "j" || key.downArrow) {
+      if (input === "A") {
+        setArchiveOpen((v) => !v);
+      } else if (input === "j" || key.downArrow) {
         setFocusIdx((i) => Math.min(Math.max(items.length - 1, 0), i + 1));
       } else if (input === "k" || key.upArrow) {
         setFocusIdx((i) => Math.max(0, i - 1));
@@ -346,7 +361,10 @@ function App(): React.JSX.Element {
   });
 
   const detailTask =
-    overlay.kind === "detail" ? snap.tasks.find((t) => t.id === overlay.taskId) : undefined;
+    overlay.kind === "detail"
+      ? snap.tasks.find((t) => t.id === overlay.taskId) ??
+        archive.tasks.find((t) => t.id === overlay.taskId)
+      : undefined;
   const answerTask =
     overlay.kind === "answer" ? snap.tasks.find((t) => t.id === overlay.taskId) : undefined;
 
@@ -429,11 +447,14 @@ function App(): React.JSX.Element {
           rows={bodyRows}
           diffFor={diffFor}
           questionFor={questionFor}
+          archived={archive.tasks}
+          archivedTotal={archive.total}
+          archiveOpen={archiveOpen}
         />
       ) : tab === "board" ? (
         <Board tasks={snap.tasks} focusCol={focusCol} focusRow={focusRow} now={snap.refreshedAt} columns={columns} rows={bodyRows} />
       ) : (
-        <ConfigView />
+        <ConfigView columns={columns} rows={bodyRows} />
       )}
       {overlay.kind === "confirm-cancel" && (
         <Box borderStyle="round" borderColor="red" paddingX={1}>

@@ -10,6 +10,7 @@ export const KEYMAP: Array<{ keys: string; action: string; context: string }> = 
   { keys: "a", action: "answer a blocked task in its pane", context: "harvest" },
   { keys: "r", action: "requeue (review/failed)", context: "harvest" },
   { keys: "J", action: "jump to the task's Herdr pane", context: "harvest" },
+  { keys: "A", action: "fold/unfold the done archive", context: "harvest" },
   { keys: "n", action: "new task", context: "harvest" },
   { keys: "h l / ← →", action: "focus column", context: "board" },
   { keys: "j k / ↓ ↑", action: "focus card", context: "board" },

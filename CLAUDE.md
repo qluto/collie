@@ -160,6 +160,13 @@ frames), `COLLIE_CCUSAGE_BIN` (fixture script instead of real ccusage).
 - The default tab is Harvest (review / asking / failed with one-key actions);
   the board is the "see everything" sub-view: 5 lanes, `blocked` is labeled
   "Asking", done has no lane (archived out of the working set).
+- Done work is still reachable: Harvest ends in a folded `📦 Done N · A to open`
+  line that `A` expands into a 4th group (newest 20, `endedAt` desc, Enter opens
+  the same Detail). It reads `listArchived(limit)`, NOT the snapshot —
+  `snap.tasks` stays the working set the board and dispatcher reason about, and
+  the archive only grows, so selection is by file mtime and `limit: 0` (folded)
+  is a single readdir per tick. Archived tasks reach `harvestList` only through
+  its second argument.
 - Below `NARROW_COLUMNS` (70) the board switches to `StackedBoard` — five lanes
   side by side cannot hold a title on a phone. Ink has NO scrolling: anything
   past the last row is gone, so the stacked layout budgets rows explicitly
@@ -168,6 +175,15 @@ frames), `COLLIE_CCUSAGE_BIN` (fixture script instead of real ccusage).
   `Detail` cuts every line to the pane width for the same reason — a wrapped
   line shifts the rest and the repaint lands on the previous frame, which reads
   as corruption.
+- Whitespace is budgeted, not decorative: Harvest and Config compute their rows
+  with the blank separators included and drop them FIRST when the pane is short
+  (Harvest's `airy` flag needs the whole harvest to fit; Config falls back
+  spaced → packed → `… +N lines`). Never add a bare blank `<Text>` outside that
+  arithmetic — Ink cannot scroll, so it costs a real line of content.
+- `displayWidth` carries an explicit East_Asian_Width=W table for the symbol
+  blocks (✅ ❌ ❓ are 2 cells, ✓ ✗ · are 1) and reads U+FE0F/U+FE0E, which is
+  what decides "⚙" (1) vs "⚙️" (2). Guessing by block is wrong in both
+  directions; `padToWidth` builds the Config label column on top of it.
 - Board text is truncated/wrapped by `truncateToWidth`/`wrapToWidth`, never by
   Ink's `wrap="truncate"`: Ink miscounts CJK by a cell and the column border
   falls off the row. Column boxes carry an explicit `width` (not flexGrow) so

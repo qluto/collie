@@ -13,7 +13,7 @@ function freshHome(): string {
 // Import lazily after COLLIE_HOME is set per-test (paths read env dynamically,
 // so a single static import is fine as long as env is set before calls).
 import {
-  createTask, deleteTask, getTask, listTasks, transition, updateTask, cancelTask,
+  createTask, deleteTask, getTask, listArchived, listTasks, transition, updateTask, cancelTask,
   markDone, parseTaskFile, retryTask, serializeTask, tailEvents, IllegalTransitionError,
 } from "../src/index.ts";
 
@@ -251,6 +251,33 @@ describe("archiving", () => {
     fs.copyFileSync(archivedPath(t.id), livePath(t.id));
     const listed = listTasks({ includeArchived: true }).filter((x) => x.id === t.id);
     expect(listed.length).toBe(1);
+  });
+
+  test("listArchived: newest first, bounded, and a count that ignores the bound", async () => {
+    const ids: string[] = [];
+    for (const title of ["first", "second", "third"]) {
+      const t = createTask({ title, repo: "/tmp", prompt: "p" });
+      transition(t.id, "running");
+      transition(t.id, "review", { resultSummary: `${title} summary` });
+      transition(t.id, "done");
+      ids.push(t.id);
+      await Bun.sleep(2); // endedAt is the sort key; keep the stamps distinct
+    }
+
+    // folded: the count only, no file parsed
+    expect(listArchived(0)).toEqual({ tasks: [], total: 3 });
+
+    const two = listArchived(2);
+    expect(two.total).toBe(3);
+    expect(two.tasks.map((t) => t.id)).toEqual([ids[2]!, ids[1]!]);
+    expect(two.tasks[0]!.run?.resultSummary).toBe("third summary");
+
+    expect(listArchived(50).tasks.map((t) => t.id)).toEqual([...ids].reverse());
+  });
+
+  test("listArchived on a home that has never archived anything", () => {
+    createTask({ title: "live", repo: "/tmp", prompt: "p" });
+    expect(listArchived(10)).toEqual({ tasks: [], total: 0 });
   });
 
   test("markDone stays idempotent across the archive move", () => {

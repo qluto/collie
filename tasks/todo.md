@@ -443,3 +443,58 @@ tasks/archive/ へ移動 → pane close。全フェーズ成功。
 （E2E では BLUE と答えたのに red が選ばれた）。メニュー型の質問には `J` ジャンプが
 正道。次ラウンド候補: pane.read でメニューを検出したら answer overlay が選択肢
 ピッカーに切り替わる構造化回答。
+
+# Harvest からアーカイブ（done）を見返せるようにする
+
+Plan: /Users/qluto/.claude/plans/temporal-crafting-badger.md
+
+`d` で done にした瞬間タスクは `tasks/archive/` に移り、`listTasks()` は archive を
+読まない → Board にも Harvest にも出ず「何やってたっけ」が消える、という報告への対応。
+
+- [x] core: `listArchived(limit)`（mtime で新しい順に選び limit 件だけパース、
+      `endedAt` desc で並べ直す、`limit:0` は readdir だけ = 件数）
+- [x] tui/harvest: 折りたたみ行 `📦 Done N · A to open` / 展開で 4 グループ目
+      （タイトル + `MM-DD HH:MM · resultSummary`）、行バジェットに折りたたみ行を計上
+- [x] tui/app: `A` トグル、`listArchived` を useMemo（snap には混ぜない）、
+      Detail 解決を archive にもフォールバック
+- [x] keys.ts / CLAUDE.md 追記
+- [x] テスト: store 2件（順序・上限・件数・archive なし home）、harvest 6件
+      （折りたたみ / 空archive / 展開表示 / 展開時の行バジェット / 折りたたみ時の
+      行バジェット / harvestList の連結）
+
+### Review
+
+`bun test` 160 pass / 0 fail、`bunx tsc --noEmit` clean。
+
+実機確認（temp COLLIE_HOME + herdr の使い捨て workspace 2つ、どちらも close 済み）:
+折りたたみ行 → `A` で 5 件展開（日時 + 要約、日本語タイトルの桁溢れなし）→ `j` で
+アーカイブまでカーソル移動 → Enter で done タスクの Detail（history に review → done
+まで出る）→ `d` は "d promotes a reviewed task to done" とフラッシュするだけ。
+
+ドライブ中に判明した既存挙動（今回は触っていない）: Ink の `useInput` は複数文字の
+チャンクを 1 つの `input` 文字列として渡すので、`pane.send_text "jjj"` は j 3 回に
+ならない。TUI をスクリプトで駆動するときは 1 キーずつ送ること。
+
+# Harvest / Config の可読性
+
+- [x] cursor: `displayWidth` に絵文字（EAW=W）テーブルと FE0F/FE0E の解釈を追加、
+      `padToWidth` を新設（Config のラベル列がこれで揃う）
+- [x] harvest: グループ見出しを色分け（Review 緑 / Asking 黄 / Failed 赤 / Done 灰）、
+      `✗` → `❌` で全マーカー 2 セル、件数は dim、フッタはキーだけシアン
+- [x] harvest: グループ間・アーカイブ行の上・フッタの上に空行。ただし **全部収まる
+      ときだけ**（`airy`）。狭いペインでは従来どおり 1 行も無駄にしない
+- [x] config: セクション化（🕐 schedule / 🧍 presence / 🚦 dispatch / 📊 quota /
+      🌱 defaults / 🐕 herdr / 📁 repos）、ラベル列 12 セルで値を揃える、
+      これまで TUI から見えなかった presence と burn-down と asking_limit を表示、
+      行が足りなければ 空行削除 → `… +N lines` の順で畳む
+- [x] app: ConfigView に columns/rows を渡す（今まで行バジェット無視だった）
+- [x] テスト: cursor 6件（絵文字幅・パディング）、config 5件（セクション/整列/
+      行バジェット/狭幅/壊れた toml）、harvest に空行の有無 1件
+
+### Review
+
+`bun test` 172 pass / 0 fail、`bunx tsc --noEmit` clean。80/110/44 桁 × 24/20/11 行で
+オーバーフロー無しを確認（テストでも幅を assert）。
+
+実機: temp COLLIE_HOME + herdr の使い捨て workspace（close 済み）で harvest 折りたたみ /
+展開 / config を目視。日本語タイトルと絵文字混在でも桁ズレなし。
