@@ -86,20 +86,30 @@ async function teardown(task: Task): Promise<string> {
   return "nothing to close";
 }
 
+/**
+ * The command's only exit channel. Bound to a herdr key, `collie done` runs
+ * detached — stderr goes nowhere — so a failure that does not become a toast
+ * is indistinguishable from the key doing nothing at all. Every throw has to
+ * come back through here, including one from parsing args or resolving the id
+ * (listTasks touches the filesystem and can raise).
+ */
+async function reportFailure(message: string): Promise<number> {
+  console.error(`collie: ${message}`);
+  await showNotification(message, "request");
+  return 1;
+}
+
 /** `collie done [<id>] [--close]` — promote to done from wherever the human is standing. */
 export async function runDoneCommand(argv: string[]): Promise<number> {
-  const { values, positionals } = parseArgs({
-    args: argv,
-    options: { close: { type: "boolean", default: false } },
-    allowPositionals: true,
-  });
-  const resolved = resolveTaskId(positionals[0]);
-  if ("error" in resolved) {
-    console.error(`collie: ${resolved.error}`);
-    await showNotification(resolved.error, "request");
-    return 1;
-  }
   try {
+    const { values, positionals } = parseArgs({
+      args: argv,
+      options: { close: { type: "boolean", default: false } },
+      allowPositionals: true,
+    });
+    const resolved = resolveTaskId(positionals[0]);
+    if ("error" in resolved) return await reportFailure(resolved.error);
+
     const task = markDone(resolved.id, { source: "human-in-pane" });
     console.log(`${task.id} -> done`);
 
@@ -118,9 +128,6 @@ export async function runDoneCommand(argv: string[]): Promise<number> {
     }
     return 0;
   } catch (err) {
-    const msg = (err as Error).message;
-    console.error(`collie: ${msg}`);
-    await showNotification(msg, "request");
-    return 1;
+    return await reportFailure((err as Error).message);
   }
 }

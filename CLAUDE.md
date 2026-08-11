@@ -309,6 +309,13 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
   treat a toast as delivered; `collie done` also renames the pane (`✓ <id>`),
   which persists and needs no user setting. `pane.rename` touches `label` only
   — `agent.list`'s `name` (the uniqueness key for agent.start) is separate.
+  Because the toast is the ONLY channel, nothing in `runDoneCommand` may throw
+  past it: arg parsing and id resolution (`listTasks` touches the filesystem)
+  sit INSIDE the try, and `showNotification` falls back to
+  `DEFAULT_CONFIG.herdr.socketPath` when `loadConfig` throws — reading the
+  socket path out of the very config it needs to complain about is a circular
+  dependency whose failure mode is total silence, which reads exactly like the
+  keybinding being dead.
 - Herdr plugins (`herdr-plugin.toml`, `plugin.link`) work on 0.7.1, but
   `[[link_handlers]]` do NOT fire on pane link clicks: clicking hands the URL
   to the OS (`link_click` exists in the binary but is unwired in this build),
