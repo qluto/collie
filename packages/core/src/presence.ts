@@ -10,10 +10,17 @@ export function parseHidIdleNs(ioregOut: string): number | null {
   return Number.isFinite(ns) ? ns : null;
 }
 
-/** Seconds since last macOS HID input; null when the probe fails (non-mac, sandbox). */
+/**
+ * Seconds since last macOS HID input; null when the probe fails (non-mac, sandbox).
+ *
+ * ioreg is addressed ABSOLUTELY: it lives in /usr/sbin, which a login shell has
+ * on PATH and launchd does not — under the plist the bare name resolved to
+ * ENOENT, so the dispatcher read every human at the keyboard as "unknown" while
+ * `collie doctor`, run from a terminal, reported the probe healthy.
+ */
 export function inputIdleSeconds(): number | null {
   if (process.platform !== "darwin") return null;
-  const res = spawnSync("ioreg", ["-c", "IOHIDSystem", "-d", "4"], {
+  const res = spawnSync("/usr/sbin/ioreg", ["-c", "IOHIDSystem", "-d", "4"], {
     encoding: "utf8",
     timeout: 5_000,
   });
@@ -39,6 +46,7 @@ const STRICTNESS: Record<ScheduleMode, number> = { paused: 0, conservative: 1, f
  * - paused                                     -> passthrough (never upgraded)
  * - present                                    -> mode capped at cfg.whenPresent
  * - absent && absentUpgrade && conservative    -> full (opt-in upgrade)
+ * - probe unavailable                          -> passthrough, but SAYS so
  * - anything else                              -> passthrough
  *
  * present = keyboard touched within idleThresholdMin, or (opt-in) some other
@@ -77,6 +85,11 @@ export function applyPresence(
   if (absent && cfg.absentUpgrade && mode === "conservative") {
     return { mode: "full", reason: `presence: idle ${Math.round(idleSec / 60)}m → full` };
   }
+
+  // A dead probe is not "absent", and it must not pass silently: presence that
+  // never fires reads exactly like presence being off, which is how a
+  // PATH-less ioreg dispatched work at a human sitting right there.
+  if (idleSec === null) return { mode, reason: "presence: input probe unavailable" };
 
   return { mode };
 }

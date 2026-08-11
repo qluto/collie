@@ -165,8 +165,15 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
   there is a human to respect. A non-binding cap still reports itself
   (`presence: human at keyboard (already conservative)`) so "on but inert" is
   distinguishable from "off". Absent + `absent_upgrade` lifts conservative →
-  full; paused never upgrades; a failed ioreg probe is "unknown" and changes
-  nothing.
+  full; paused never upgrades; a failed ioreg probe is "unknown" — it changes
+  no mode but SAYS so (`presence: input probe unavailable`), because presence
+  that silently never fires is indistinguishable from presence being off, which
+  is how a PATH-less probe hid for a week. **ioreg is spawned as
+  `/usr/sbin/ioreg`, absolutely**: it lives in `/usr/sbin`, which a login shell
+  has and launchd's plist PATH did not, so the dispatcher read every human at
+  the keyboard as "unknown" while `collie doctor` — run from a terminal —
+  reported the probe healthy. Any subprocess the dispatcher spawns has that
+  same exposure; don't trust a bare command name there.
 
 ## Non-obvious invariants
 

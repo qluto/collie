@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../src/config.ts";
-import { applyPresence, parseHidIdleNs, type PresenceSignals } from "../src/presence.ts";
+import { applyPresence, inputIdleSeconds, parseHidIdleNs, type PresenceSignals } from "../src/presence.ts";
 import type { Config, ScheduleMode } from "../src/types.ts";
 
 /** Trimmed from real `ioreg -c IOHIDSystem -d 4` output on macOS 15. */
@@ -39,6 +39,22 @@ describe("parseHidIdleNs", () => {
     expect(parseHidIdleNs("")).toBeNull();
     expect(parseHidIdleNs("ioreg: not found\n")).toBeNull();
     expect(parseHidIdleNs(`"HIDIdleTime" = <ptr>`)).toBeNull();
+  });
+});
+
+describe("inputIdleSeconds", () => {
+  // launchd hands the dispatcher a PATH without /usr/sbin, where ioreg lives.
+  // The bare name resolved to ENOENT there and every human at the keyboard read
+  // as "unknown", while doctor — run from a login shell — said the probe was
+  // fine. An empty PATH is that condition, exaggerated.
+  test.skipIf(process.platform !== "darwin")("survives an empty PATH", () => {
+    const saved = process.env.PATH;
+    process.env.PATH = "";
+    try {
+      expect(inputIdleSeconds()).not.toBeNull();
+    } finally {
+      process.env.PATH = saved;
+    }
   });
 });
 
@@ -103,7 +119,7 @@ describe("applyPresence", () => {
 
   test("respect_other_agents = false ignores them", () => {
     const r = applyPresence("full", signals(null, true), cfg({ respectOtherAgents: false }));
-    expect(r).toEqual({ mode: "full" });
+    expect(r.mode).toBe("full");
   });
 
   test("absent + absent_upgrade lifts conservative to full", () => {
@@ -123,8 +139,16 @@ describe("applyPresence", () => {
   });
 
   test("a failed probe never upgrades", () => {
-    expect(applyPresence("conservative", signals(null), cfg({ absentUpgrade: true })))
-      .toEqual({ mode: "conservative" });
-    expect(applyPresence("full", signals(null), cfg())).toEqual({ mode: "full" });
+    expect(applyPresence("conservative", signals(null), cfg({ absentUpgrade: true })).mode)
+      .toBe("conservative");
+    expect(applyPresence("full", signals(null), cfg()).mode).toBe("full");
+  });
+
+  // Silent inertness is what hid a PATH-less ioreg for a whole week: the
+  // dispatcher dispatched at a human and its decision line looked like a
+  // window verdict, indistinguishable from presence being switched off.
+  test("a failed probe announces itself instead of passing silently", () => {
+    expect(applyPresence("full", signals(null), cfg()).reason)
+      .toBe("presence: input probe unavailable");
   });
 });

@@ -12,7 +12,7 @@
   <key>StandardOutPath</key><string>{{HOME}}/.collie/logs/dispatcher.log</string>
   <key>StandardErrorPath</key><string>{{HOME}}/.collie/logs/dispatcher.log</string>
   <key>EnvironmentVariables</key><dict>
-    <key>PATH</key><string>{{BUN_DIR}}:{{HOME}}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>PATH</key><string>{{BUN_DIR}}:{{HOME}}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     <key>HOME</key><string>{{HOME}}</string>
   </dict>
   <key>ThrottleInterval</key><integer>15</integer>

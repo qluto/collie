@@ -151,7 +151,9 @@ describe("planTick presence", () => {
 
     const plan = withoutHidProbe(() => planTick(ctx));
     expect(plan.mode).toBe("full");
-    expect(plan.decision).not.toMatch(/presence/);
+    // The stubbed probe reports itself; what must not appear is a downgrade.
+    expect(plan.decision).not.toMatch(/another agent working/);
+    expect(plan.task).toBeDefined();
   });
 
   test("disabled presence never touches the mode", () => {
