@@ -39,10 +39,13 @@ frames), `COLLIE_CCUSAGE_BIN` (fixture script instead of real ccusage).
    `agent.list` → watchdog (idle timeout, limit scrape, question scrape) →
    gates (schedule window → presence post-process → quota.json blockedUntil →
    WIP (running only) → asking_limit → `modeAdmits` + `limitsAllow` incl.
-   burn-down in `core/src/quota/gate.ts`) → dispatch: worktree.create →
-   agent.start → verify-inject one-line prompt pointer → Enter → transition to
-   running LAST (crash safety; half-spawned panes are adopted via the
-   session-start hook).
+   burn-down in `core/src/quota/gate.ts`) → dispatch: make the workspace
+   (worktree.create, or workspace.create for a non-worktree task) → make the
+   pane that carries the task's cwd AND env (`tab.create`, or the root pane
+   `workspace.create` already handed back) → agent.start into it → wait for
+   `interactive_ready` (auto-confirming the folder-trust dialog) →
+   agent.prompt the one-line prompt pointer → transition to running LAST (crash
+   safety; half-spawned panes are adopted via the session-start hook).
 3. Spawned claude sessions get generated `--settings` with hooks that call
    back into `collie hook <name>`; task identity rides env `COLLIE_TASK_ID`,
    pane identity `HERDR_PANE_ID`. Completion = the session runs
@@ -56,23 +59,28 @@ frames), `COLLIE_CCUSAGE_BIN` (fixture script instead of real ccusage).
 The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
 `pane.run` does not exist on the wire.**
 
-> ⚠ **DISPATCH IS BROKEN ON 0.8.0 UNTIL MIGRATED.** `agent.start` changed
-> shape (below) and rejects collie's call with `invalid_request: missing field
-> 'kind'`, so every spawn fails and burns an attempt. See `tasks/todo.md`.
-
 - Newline-JSON over `~/.config/herdr/herdr.sock`. Error frames could LOSE the
   request id on 0.7.1 → never multiplex; `HerdrClient.request` = one connection
   per call, `subscribe` = dedicated connection per pane. Subscribe BEFORE
   acting. (Not re-tested on 0.8.0; the rule costs nothing.)
 - `agent.start` = `{name, kind, pane_id, args?, timeout_ms?}` and **creates no
-  layout**: it adopts an EXISTING shell pane sitting at its prompt. `cwd` and
-  `env` are gone from the call — they are properties of the pane you make
-  first (`workspace.create` takes `--env`, `pane.split` takes `--cwd --env`,
-  `worktree.create` takes NEITHER). Unknown fields are still silently ignored,
-  so the old `{argv, cwd, workspace_id, env}` would be dropped without a word
-  once `kind` is supplied. Consequences for the migration: the root pane of a
-  created workspace IS the agent's pane (do not close it), and native claude
-  flags ride in `args`, not `argv`.
+  layout**: it adopts an EXISTING shell pane. `cwd`/`env`/`argv` are gone from
+  the call — cwd and env are properties of the pane you make first
+  (`workspace.create`, `tab.create` and `pane.split` all take `cwd` + `env`;
+  **`worktree.create` takes neither**), and native claude flags ride in `args`.
+  Unknown fields are still silently ignored, so a stale call shape is dropped
+  without a word rather than erroring.
+- Two things `agent.start` does NOT do, both learned the hard way:
+  1. It refuses a pane whose login shell has not reached its prompt yet —
+     `agent_pane_busy: not an available shell`. A fat zshrc takes a second, so
+     dispatch RETRIES rather than guessing a delay.
+  2. It returns as soon as the launch is under way, NOT when the agent is
+     usable: for a few seconds there is no named agent at all and
+     `agent.prompt` answers `agent_not_ready: not an active named agent`.
+- Readiness is `agent.get` reporting `interactive_ready: true` on a record
+  whose `name` is ours — never `agent_status`, which is screen-scraped and
+  reads `idle` for a pane that merely holds an idle SHELL. (The full record
+  also carries `agent` = the kind, `state_change_seq`, cwd/foreground_cwd.)
 - `agent.prompt {target, text, wait?, until?, timeout_ms?}` EXISTS now and
   "atomically submits text and encoded Enter while honoring the pane's live
   bracketed-paste mode" — it replaces send → verify-echo → `pane.send_keys

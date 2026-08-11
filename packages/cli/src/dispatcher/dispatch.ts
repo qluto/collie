@@ -1,6 +1,6 @@
 import * as path from "node:path";
-import { getTask, transition, updateTask } from "@collie/core";
-import type { HerdrAgentInfo, Task } from "@collie/core";
+import { HerdrError, getTask, transition, updateTask } from "@collie/core";
+import type { Task } from "@collie/core";
 import { log, trackPane, untrackPane, type DispatcherCtx } from "./ctx.ts";
 import { pointerPrompt, settingsPath, writeRunArtifacts } from "./artifacts.ts";
 
@@ -9,31 +9,45 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Where to spawn. `rootPaneId` is the shell pane a freshly created workspace
- * comes with: `agent.start` always splits off a NEW pane (it has no "run in
- * this pane" argument — unknown fields are silently ignored on 0.7.1), so that
- * shell would sit next to the agent forever. Dispatch closes it.
+ * Where the agent will live. Herdr 0.8.0's `agent.start` CREATES NO LAYOUT —
+ * it adopts a shell pane already sitting at its prompt — and carries neither
+ * cwd nor env, so the pane must be born with both.
+ *
+ * `readyPaneId` is a pane we made WITH the task's cwd+env: use it as is.
+ * `ownedRootPaneId` is the bare shell a workspace we created came with, which
+ * has the cwd but not the env — ours to close once the task's own pane exists.
+ * A workspace we merely found (a human's, or a reopened worktree) contributes
+ * neither: nothing in it is ours to reuse or to close.
  */
 interface SpawnTarget {
   workspaceId?: string;
-  rootPaneId?: string;
+  readyPaneId?: string;
+  ownedRootPaneId?: string;
+  tabId?: string;
 }
 
 /** Find a workspace to spawn into: an existing agent pane with the same cwd wins. */
-async function resolveWorkspace(ctx: DispatcherCtx, cwd: string): Promise<SpawnTarget> {
+async function resolveWorkspace(
+  ctx: DispatcherCtx,
+  cwd: string,
+  env: Record<string, string>,
+): Promise<SpawnTarget> {
   const existing = ctx.agents.find((a) => a.cwd === cwd || a.foreground_cwd === cwd);
   if (existing) return { workspaceId: existing.workspace_id }; // someone else's pane: leave it alone
   try {
     const res = await ctx.herdr.request<Record<string, unknown>>("workspace.create", {
       cwd,
       label: cwd.split("/").at(-1),
+      env,
       focus: false,
     });
     // tolerate shape drift: workspace id may sit at several places
     const ws = res.workspace as Record<string, unknown> | undefined;
     return {
       workspaceId: (res.workspace_id ?? ws?.workspace_id ?? ws?.id ?? res.id) as string | undefined,
-      rootPaneId: rootPaneOf(res),
+      // born with our cwd AND our env: this is the task's pane
+      readyPaneId: rootPaneOf(res),
+      tabId: tabOf(res),
     };
   } catch (err) {
     log(ctx, `workspace.create failed for ${cwd}: ${(err as Error).message}; spawning without workspace`);
@@ -44,6 +58,36 @@ async function resolveWorkspace(ctx: DispatcherCtx, cwd: string): Promise<SpawnT
 function rootPaneOf(res: Record<string, unknown>): string | undefined {
   const pane = res.root_pane as Record<string, unknown> | undefined;
   return pane?.pane_id as string | undefined;
+}
+
+function tabOf(res: Record<string, unknown>): string | undefined {
+  const tab = res.tab as Record<string, unknown> | undefined;
+  return tab?.tab_id as string | undefined;
+}
+
+/**
+ * The pane the agent gets adopted into. `tab.create` is the only way to add one
+ * to a workspace we did not create without touching a pane that may be a
+ * human's — and unlike `worktree.create` it takes both cwd and env.
+ */
+async function createTaskPane(
+  ctx: DispatcherCtx,
+  task: Task,
+  cwd: string,
+  env: Record<string, string>,
+  target: SpawnTarget,
+): Promise<{ paneId: string; tabId?: string }> {
+  if (target.readyPaneId) return { paneId: target.readyPaneId, tabId: target.tabId };
+  const res = await ctx.herdr.request<Record<string, unknown>>("tab.create", {
+    ...(target.workspaceId ? { workspace_id: target.workspaceId } : {}),
+    cwd,
+    env,
+    label: task.id,
+    focus: false,
+  });
+  const paneId = rootPaneOf(res);
+  if (!paneId) throw new Error(`tab.create returned no root pane: ${JSON.stringify(res).slice(0, 120)}`);
+  return { paneId, tabId: tabOf(res) };
 }
 
 /**
@@ -158,8 +202,12 @@ export async function dispatchTask(ctx: DispatcherCtx, task: Task): Promise<void
   writeRunArtifacts(task);
 
   let cwd = task.repo;
-  let workspaceId: string | undefined;
-  let rootPaneId: string | undefined;
+  const env: Record<string, string> = {
+    COLLIE_TASK_ID: task.id,
+    ...(process.env.COLLIE_HOME ? { COLLIE_HOME: process.env.COLLIE_HOME } : {}),
+  };
+
+  let target: SpawnTarget;
   if (task.worktree) {
     const wt = await ensureWorktree(ctx, task);
     if ("error" in wt) {
@@ -167,66 +215,83 @@ export async function dispatchTask(ctx: DispatcherCtx, task: Task): Promise<void
       return;
     }
     cwd = wt.path;
-    workspaceId = wt.workspaceId;
-    rootPaneId = wt.rootPaneId;
-    log(ctx, `task ${task.id}: worktree ${cwd} (workspace ${workspaceId})`);
+    // worktree.create takes neither cwd nor env for its shell, so its root pane
+    // can never be the task's pane — a tab of our own gets both.
+    target = { workspaceId: wt.workspaceId, ownedRootPaneId: wt.rootPaneId };
+    log(ctx, `task ${task.id}: worktree ${cwd} (workspace ${wt.workspaceId})`);
   } else {
-    ({ workspaceId, rootPaneId } = await resolveWorkspace(ctx, cwd));
+    target = await resolveWorkspace(ctx, cwd, env);
   }
+  const workspaceId = target.workspaceId;
 
   let paneId: string;
   let tabId: string | undefined;
   try {
-    const res = await ctx.herdr.request<Record<string, unknown>>("agent.start", {
-      name: task.id, // agent names must be unique; the task id doubles as a sidebar label
-      argv: [
-        "claude",
-        "--settings", settingsPath(task.id),
-        "--permission-mode", task.permissionMode,
-        ...task.claudeArgs,
-      ],
-      cwd,
-      ...(workspaceId ? { workspace_id: workspaceId } : {}),
-      env: {
-        COLLIE_TASK_ID: task.id,
-        ...(process.env.COLLIE_HOME ? { COLLIE_HOME: process.env.COLLIE_HOME } : {}),
-      },
-      focus: false,
-    });
-    const agent = (res.agent ?? res) as Record<string, unknown>;
-    paneId = (agent.pane_id ?? res.pane_id) as string;
-    tabId = (agent.tab_id ?? res.tab_id) as string | undefined;
-    if (!paneId) throw new Error(`agent.start returned no pane_id: ${JSON.stringify(res)}`);
-    // The workspace's own shell pane has served its purpose (it only existed so
-    // the workspace could exist); leave the agent alone in the tab.
-    if (rootPaneId && rootPaneId !== paneId) {
-      try {
-        await ctx.herdr.request("pane.close", { pane_id: rootPaneId });
-      } catch (closeErr) {
-        log(ctx, `task ${task.id}: could not close root pane ${rootPaneId}: ${(closeErr as Error).message}`);
-      }
-    }
+    ({ paneId, tabId } = await createTaskPane(ctx, task, cwd, env, target));
   } catch (err) {
-    requeueOrFail(ctx, task.id, `spawn_failed: ${(err as Error).message}`);
+    requeueOrFail(ctx, task.id, `pane_failed: ${(err as Error).message}`);
     return;
+  }
+  // The bare shell a workspace we created came with has served its purpose.
+  if (target.ownedRootPaneId && target.ownedRootPaneId !== paneId) {
+    try {
+      await ctx.herdr.request("pane.close", { pane_id: target.ownedRootPaneId });
+    } catch (closeErr) {
+      log(ctx, `task ${task.id}: could not close root pane ${target.ownedRootPaneId}: ${(closeErr as Error).message}`);
+    }
   }
 
   const tracker = trackPane(ctx, task.id, paneId);
 
-  // Wait until claude is truly at its input box: agent detection must report a
-  // real status ("unknown" covers boot screens and dialogs). The folder-trust
-  // dialog is auto-confirmed — queueing a task for a repo IS the trust decision.
-  const deadline = Date.now() + ctx.config.dispatch.readyTimeoutSec * 1000;
+  // agent.start launches claude in that pane and returns only once herdr sees
+  // it interactive, so the old poll-for-idle loop is gone — but the readiness
+  // it waits for is exactly what the folder-trust dialog withholds, hence the
+  // concurrent watcher.
+  const readyMs = ctx.config.dispatch.readyTimeoutSec * 1000;
+  const deadline = Date.now() + readyMs;
+  for (;;) {
+    try {
+      await ctx.herdr.request("agent.start", {
+        name: task.id, // names must be unique among live agents; the id doubles as a sidebar label
+        kind: "claude",
+        pane_id: paneId,
+        // native claude flags: 0.8.0 launches the agent itself, argv is gone
+        args: [
+          "--settings", settingsPath(task.id),
+          "--permission-mode", task.permissionMode,
+          ...task.claudeArgs,
+        ],
+        timeout_ms: readyMs,
+      }, { timeoutMs: readyMs + 15_000 });
+      break;
+    } catch (err) {
+      // A pane counts as "an available shell" only once its login shell has
+      // reached its prompt — a fat zshrc takes a beat, and agent.start refuses
+      // with agent_pane_busy until then. Retry instead of guessing a delay.
+      if ((err as HerdrError).code === "agent_pane_busy" && Date.now() < deadline && !tracker.exited) {
+        await sleep(1000);
+        continue;
+      }
+      await closeHalfSpawnedPane(ctx, task.id, paneId);
+      requeueOrFail(ctx, task.id, `spawn_failed: ${(err as Error).message}`);
+      return;
+    }
+  }
+
+  // agent.start returns as soon as the launch is under way, so readiness is
+  // still ours to establish. Readiness is `interactive_ready` on an agent
+  // record carrying OUR name — that is exactly what agent.prompt demands
+  // ("not an active named agent" otherwise). Never `agent_status`: it is
+  // screen-scraped, and a pane whose shell is merely idle reads idle too. The
+  // folder-trust dialog is answered here: queueing a task for a repo IS the
+  // trust decision.
   let ready = false;
-  while (Date.now() < deadline) {
-    if (tracker.exited) break;
-    // Poll live status only — event-cached status is unreliable during boot
-    // (the startup spinner can briefly classify as "working").
-    let status: HerdrAgentInfo["agent_status"] | undefined;
+  while (Date.now() < deadline && !tracker.exited) {
+    let info: { name?: string; interactive_ready?: boolean } = {};
     let screen = "";
     try {
       const res = await ctx.herdr.request<Record<string, unknown>>("agent.get", { target: paneId });
-      status = ((res.agent ?? res) as HerdrAgentInfo).agent_status;
+      info = (res.agent ?? res) as typeof info;
       const read = await ctx.herdr.request<Record<string, unknown>>("pane.read", {
         pane_id: paneId, source: "visible", lines: 40,
       });
@@ -235,12 +300,9 @@ export async function dispatchTask(ctx: DispatcherCtx, task: Task): Promise<void
       // not detected / not readable yet
     }
     if (/Yes, I trust this folder/.test(screen)) {
-      // Startup dialogs read as "blocked"; queueing a task for a repo IS the
-      // trust decision, so confirm and keep waiting for the input box.
       log(ctx, `task ${task.id}: confirming folder-trust dialog in ${paneId}`);
       await ctx.herdr.request("pane.send_keys", { pane_id: paneId, keys: ["Enter"] });
-    } else if (status === "idle") {
-      tracker.lastStatus = status;
+    } else if (info.name === task.id && info.interactive_ready === true) {
       ready = true;
       break;
     }
@@ -254,24 +316,20 @@ export async function dispatchTask(ctx: DispatcherCtx, task: Task): Promise<void
   // Give claude's input box a beat to accept text after detection.
   await sleep(1500);
 
-  // Inject the one-line pointer; verify it landed before pressing Enter.
-  const pointer = pointerPrompt(task.id);
+  // One atomic submit: agent.prompt sends the text AND the encoded Enter,
+  // honouring the pane's live bracketed-paste mode, so the send → read back →
+  // press Enter dance (and its whitespace-stripped echo check) is gone. Retried
+  // only for agent_not_ready — the registration can lag the readiness flag by a
+  // beat, and every other error means this pane is not going to take a prompt.
   let injected = false;
   for (let attempt = 0; attempt < 3 && !injected; attempt++) {
     try {
-      await ctx.herdr.request("agent.send", { target: paneId, text: pointer });
-      await sleep(500);
-      const read = await ctx.herdr.request<Record<string, unknown>>("pane.read", {
-        pane_id: paneId,
-        source: "visible",
-        lines: 40,
-      });
-      // The pane hard-wraps long lines; compare with all whitespace stripped.
-      const text = extractText(read).replace(/\s+/g, "");
-      if (text.includes(`runs/${task.id}/prompt.md`.replace(/\s+/g, ""))) injected = true;
+      await ctx.herdr.request("agent.prompt", { target: paneId, text: pointerPrompt(task.id) });
+      injected = true;
     } catch (err) {
-      log(ctx, `inject attempt ${attempt + 1} failed for ${task.id}: ${(err as Error).message}`);
-      await sleep(1000);
+      log(ctx, `task ${task.id}: agent.prompt attempt ${attempt + 1} failed: ${(err as Error).message}`);
+      if ((err as HerdrError).code !== "agent_not_ready") break;
+      await sleep(1500);
     }
   }
   if (!injected) {
@@ -279,7 +337,6 @@ export async function dispatchTask(ctx: DispatcherCtx, task: Task): Promise<void
     requeueOrFail(ctx, task.id, "inject_failed");
     return;
   }
-  await ctx.herdr.request("pane.send_keys", { pane_id: paneId, keys: ["Enter"] });
 
   transition(
     task.id,

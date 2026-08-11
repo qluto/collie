@@ -565,3 +565,27 @@ cwd/env/argv が全部落ちて動かない。現在キューは空なので実�
   `wait` で idle/done/blocked まで待つ）が inject + エコー検証 + Enter を置き換える。
   `agent.wait` / `pane.wait_for_output` / `events.wait` も実装済みで、2秒ポーリングの
   ループを畳める
+
+### Review（0.8.0 移行）
+
+dispatch を書き換えて実機 E2E で両パス緑。
+
+- ペイン生成を分離: worktree タスクは `worktree.create` → **`tab.create`**
+  （cwd + env を取れる唯一の手段）、非 worktree は `workspace.create` の
+  ルートペインをそのまま使う（cwd + env 付きで生まれるので追加のタブが要らない）。
+  「自分が作ったものだけ閉じる」規則は `ownedRootPaneId` に残した
+- `agent.start {name, kind:"claude", pane_id, args, timeout_ms}`。実測で分かった罠:
+  1. ログインシェルがプロンプトに到達するまで `agent_pane_busy` で断られる
+     → 固定 sleep ではなく **リトライ**（zshrc が重いと 1 秒では足りない）
+  2. **起動を始めた時点で返る**。数秒間 named agent は存在せず、`agent.prompt` は
+     `agent_not_ready` を返す → readiness は結局こちらの仕事
+- readiness は `agent.get` の **`interactive_ready === true` かつ `name` が自分**。
+  `agent_status` は使わない（スクリーン読みなので、シェルが idle なだけのペインも
+  idle と読める＝最初の実装が誤って先に進んだ原因）
+- 注入は `agent.prompt`（text + Enter アトミック）に置換。send → pane.read で
+  エコー検証 → send_keys Enter の 3 段が消えた。`agent_not_ready` のときだけ 3 回まで再試行
+- 実機 E2E（temp COLLIE_HOME + サンドボックス git リポジトリ、後片付け済み）:
+  - worktree: 起動 → folder-trust 自動確認 → prompt → running → **review**、
+    ブランチ `collie/t-…` に HELLO.md のコミット。hooks.log に session-start が出て
+    いる = **COLLIE_TASK_ID がペイン経由でちゃんと claude に届いている**
+  - 非 worktree: 同上、main に `append second` のコミット
