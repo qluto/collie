@@ -62,9 +62,10 @@ export async function tick(ctx: DispatcherCtx): Promise<void> {
 
   await reconcile(ctx);
   await watchdog(ctx);
-  // Reads git, not herdr: a human merging a branch is a completion signal the
-  // socket never carries. Also refreshes the scan the TUI's dropped list reads.
-  adoptMerged(ctx);
+  // Driven by git, not herdr: a human merging a branch is a completion signal
+  // the socket never carries. Also refreshes the scan the TUI's dropped list
+  // reads.
+  await adoptMerged(ctx);
 
   let mode: ScheduleMode | "degraded" = "degraded";
   if (ctx.degraded) {

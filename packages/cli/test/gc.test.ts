@@ -21,7 +21,7 @@ function freshHome(): void {
 /** A finished worktree task, with its checkout already made. */
 function finishedTask(opts?: { commit?: boolean }): { id: string; worktreePath: string } {
   const task = createTask({ title: "t", repo, prompt: "p", worktree: true });
-  const worktreePath = path.join(repo, "..", `wt-${task.id}`);
+  const worktreePath = `${repo}-wt-${task.id}`;
   git(repo, "worktree", "add", "-q", "-b", `collie/${task.id}`, worktreePath);
   if (opts?.commit) {
     fs.writeFileSync(path.join(worktreePath, "feature.txt"), "work\n");

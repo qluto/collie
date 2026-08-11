@@ -19,6 +19,7 @@ import { ConfigView } from "./views/config.tsx";
 import { KEYMAP } from "./keys.ts";
 import { displayWidth, truncateToWidth } from "./cursor.ts";
 import { focusPane } from "./jump.ts";
+import { openSession } from "./session.ts";
 import { answerPane } from "./answer.ts";
 import {
   ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN, editFileInEditor, editInEditor, setRepaint,
@@ -205,6 +206,22 @@ function App(): React.JSX.Element {
     }
   };
 
+  /**
+   * Back into a finished task's conversation. The pane it ran in is usually
+   * gone by now (adoption closes it), so this makes a new one — what survives
+   * is the session id, and `claude --resume` finds it from anywhere.
+   */
+  const reopenSession = (task: Task) => {
+    if (!task.run?.sessionId) {
+      flashMsg(`${task.id} recorded no session`);
+      return;
+    }
+    flashMsg(`resuming ${task.run.sessionId.slice(0, 8)}…`);
+    void openSession(task)
+      .then((paneId) => flashMsg(`resumed in ${paneId}`))
+      .catch((err) => flashMsg(`resume failed: ${(err as Error).message}`));
+  };
+
   const openPromptEditor = (task: Task) => {
     if (editFileInEditor(taskFilePath(task.id))) refresh();
     else flashMsg("editor exited non-zero; file unchanged");
@@ -260,7 +277,12 @@ function App(): React.JSX.Element {
     if (overlay.kind === "detail") {
       const task = snap.tasks.find((t) => t.id === overlay.taskId);
       if (key.escape || input === "q") setOverlay({ kind: "none" });
-      else if (input === "e" && task) openPromptEditor(task);
+      else if (input === "o") {
+        // the archive is where this matters most, so resolve there too
+        const t = task ?? archive.tasks.find((x) => x.id === overlay.taskId)
+          ?? dropped.find((x) => x.id === overlay.taskId);
+        if (t) reopenSession(t);
+      } else if (input === "e" && task) openPromptEditor(task);
       else if (input === "g" && task?.run?.paneId) {
         const paneId = task.run.paneId;
         flashMsg(`jumping to ${paneId}…`);
@@ -318,10 +340,14 @@ function App(): React.JSX.Element {
         setOverlay({ kind: "new" });
       } else if (key.return && task) {
         setOverlay({ kind: "detail", taskId: task.id });
+      } else if (input === "o" && task) {
+        reopenSession(task);
       } else if (input === "J" && task) {
         // shift, because j/k are list movement everywhere in this TUI
         const paneId = task.run?.paneId;
-        if (!paneId) flashMsg(`${task.id} has no pane`);
+        // A finished task's pane is reclaimed on adoption, so the jump has
+        // somewhere to go only while the session is still live.
+        if (!paneId) flashMsg(`${task.id} has no pane — o resumes its session`);
         else {
           flashMsg(`jumping to ${paneId}…`);
           void focusPane(paneId).catch((err) => flashMsg(`jump failed: ${(err as Error).message}`));

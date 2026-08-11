@@ -28,7 +28,7 @@ function commit(cwd: string, file: string, body: string): void {
  */
 function reviewTask(opts?: { commits?: boolean; recordBase?: boolean }): string {
   const task = createTask({ title: "t", repo, prompt: "p", worktree: true });
-  const wt = path.join(repo, "..", `wt-${task.id}`);
+  const wt = `${repo}-wt-${task.id}`;
   git(repo, "worktree", "add", "-q", "-b", `collie/${task.id}`, wt);
   const base = headCommit(wt)!;
   if (opts?.commits !== false) commit(wt, `${task.id}.txt`, "work\n");
@@ -115,7 +115,7 @@ describe("branch scan", () => {
     const id = reviewTask();
     transition(id, "done");
     expect(refreshBranchScan({ maxAgeSec: 0 }).dropped).toEqual([id]);
-    const wt = path.join(repo, "..", `wt-${id}`);
+    const wt = `${repo}-wt-${id}`;
     fs.writeFileSync(path.join(wt, "scratch.log"), "residue\n"); // untracked goes too
 
     // git refuses to delete a branch a checkout still holds, so the order is
@@ -132,7 +132,7 @@ describe("branch scan", () => {
   test("discardTaskWork refuses to throw away uncommitted work", () => {
     const id = reviewTask();
     transition(id, "done");
-    const wt = path.join(repo, "..", `wt-${id}`);
+    const wt = `${repo}-wt-${id}`;
     fs.writeFileSync(path.join(wt, "README.md"), "edited by hand\n"); // tracked
 
     const res = discardTaskWork(getTask(id)!);

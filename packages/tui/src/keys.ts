@@ -10,6 +10,7 @@ export const KEYMAP: Array<{ keys: string; action: string; context: string }> = 
   { keys: "a", action: "answer a blocked task in its pane", context: "harvest" },
   { keys: "r", action: "requeue (review/failed)", context: "harvest" },
   { keys: "J", action: "jump to the task's Herdr pane", context: "harvest" },
+  { keys: "o", action: "reopen the task's claude session (claude --resume)", context: "harvest" },
   { keys: "x", action: "discard a dropped task's branch (confirm)", context: "harvest" },
   { keys: "u", action: "reopen a dropped task (-> review)", context: "harvest" },
   { keys: "A", action: "fold/unfold the done archive", context: "harvest" },
@@ -25,6 +26,7 @@ export const KEYMAP: Array<{ keys: string; action: string; context: string }> = 
   { keys: "x", action: "delete a queued task / cancel a live one (confirm)", context: "board" },
   { keys: "e", action: "edit config.toml in $EDITOR", context: "config" },
   { keys: "g", action: "jump to the task's Herdr pane", context: "detail" },
+  { keys: "o", action: "reopen the task's claude session", context: "detail" },
   { keys: "y", action: "copy pane id", context: "detail" },
   { keys: "Esc", action: "back / dismiss", context: "detail/dialogs" },
 ];

@@ -90,9 +90,18 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
   `agent.wait {target, until?[], timeout_ms?}`, `pane.wait_for_output`
   (`match` is an internally-tagged enum, not a bare string), `events.wait`
   (requires `match_event`). The dispatcher's 2s poll loops predate them.
-- `pane.send_input` = atomic text+Enter for a pane that holds no agent (this is
-  what the CLI's `pane run` calls). `agent.send` still does NOT press Enter,
-  and pane text still hard-wraps → compare whitespace-stripped.
+- `pane.send_input` (what the CLI's `pane run` calls) TYPES into a pane that
+  holds no agent; it does NOT submit. A trailing `\n` in `text` submits only
+  once the shell has settled — a pane seconds old swallows it and the command
+  sits at the prompt forever — so type, then `pane.send_keys {keys: ["enter"]}`,
+  the same split the answer flow uses. `agent.send` likewise does NOT press
+  Enter, and pane text still hard-wraps → compare whitespace-stripped.
+- `pane.read` REQUIRES `source` (`visible`|`recent`|`recent-unwrapped`) and
+  answers `{read: {text, …}}` — the text is a level down, and omitting `source`
+  is an `invalid_request` error, not a default.
+- Closing a workspace's LAST pane closes the workspace with it, so `pane.close`
+  is all a teardown needs: it reclaims a workspace collie made and leaves alone
+  one a human has moved into. No ownership bookkeeping required.
 - `pane.focus {pane_id}` exists now; `agent.focus {target}` still works and is
   what the TUI's jump uses.
 - Agent status is screen-scraped and NOT truth: boot spinner reads "working",
@@ -206,6 +215,16 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
      grows. Its repo roster lives in `branches.json`, seeded from the working
      set and kept while any collie branch survives; only a cold start (no file
      yet) reads a bounded slice of the archive to find repos at all.
+  Adoption also RECLAIMS the pane (`pane.close`, which takes the workspace with
+  it) and clears `run.paneId` in the same transition patch — the last chance to,
+  since an archived task is out of `updateTask`'s reach. The worktree is left
+  for gc: it is what makes a later `claude --resume` land on the files as the
+  agent left them. What survives all of it is the session, so harvest/detail
+  `o` reopens a finished task's conversation in a fresh workspace — the
+  transcript lives under `~/.claude` and outlives pane, worktree and branch, and
+  `claude --resume <id>` resolves a session id from ANY cwd (live-probed:
+  resuming elsewhere loads the conversation and appends to the original
+  transcript). That is why teardown can be eager without losing the record.
   `done→review` is legal so `u` can work, and `transition` deletes the archived
   copy after writing the live one (a crash leaves a duplicate, never nothing).
   `discardTaskWork` is the one destructive path: worktree → prune → `branch -D`,
