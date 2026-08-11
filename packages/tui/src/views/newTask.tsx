@@ -8,9 +8,9 @@ const MAX_VISIBLE_CANDIDATES = 8;
 // Fixed overlay geometry (1-indexed screen cells) for hardware-cursor
 // placement: row 1 header, row 2 box border, row 3 "New task", row 4 repo,
 // row 5 title; the value starts after "│ " (2 cells) + a 12-cell label.
-const INPUT_COL = 15;
-const REPO_ROW = 4;
-const TITLE_ROW = 5;
+export const INPUT_COL = 15;
+export const REPO_ROW = 4;
+export const TITLE_ROW = 5;
 
 export interface NewTaskDraft {
   repo: string;

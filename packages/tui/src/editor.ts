@@ -17,9 +17,17 @@ export function setRepaint(fn: () => void): void {
  * with `initial`, and return the edited text (null when the editor failed).
  * The caller re-renders afterwards; Ink recovers the screen on next output.
  */
-export function editInEditor(initial: string, suffix = ".md"): string | null {
+export function editInEditor(
+  initial: string,
+  opts: {
+    suffix?: string;
+    /** false for one-shot commands (`collie new`): they print and exit, and
+     *  the alt screen would swallow the last thing they said. */
+    restoreAltScreen?: boolean;
+  } = {},
+): string | null {
   const editor = process.env.EDITOR ?? "vi";
-  const tmp = path.join(os.tmpdir(), `collie-edit-${process.pid}-${Date.now()}${suffix}`);
+  const tmp = path.join(os.tmpdir(), `collie-edit-${process.pid}-${Date.now()}${opts.suffix ?? ".md"}`);
   fs.writeFileSync(tmp, initial);
 
   const wasRaw = process.stdin.isRaw;
@@ -33,8 +41,10 @@ export function editInEditor(initial: string, suffix = ".md"): string | null {
     if (process.stdin.isTTY && wasRaw) process.stdin.setRawMode(true);
     // full-screen editors toggle the alt screen themselves and drop us back to
     // the main buffer on exit — re-enter ours and repaint from scratch
-    process.stdout.write(ENTER_ALT_SCREEN);
-    repaint?.();
+    if (opts.restoreAltScreen !== false) {
+      process.stdout.write(ENTER_ALT_SCREEN);
+      repaint?.();
+    }
     try {
       fs.unlinkSync(tmp);
     } catch {

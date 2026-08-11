@@ -23,6 +23,7 @@ Usage:
   collie gc [--dry-run]     # drop finished tasks' worktrees and merged branches
   collie dispatcher run [--once] [--verbose] | status
   collie dispatcher install | restart | uninstall     (launchd)
+  collie new [--popup]      # the capture form alone, for a herdr popup keybinding
   collie tui
   collie doctor
 `;
@@ -42,6 +43,12 @@ async function main(argv: string[]): Promise<number> {
       return runDispatcherCommand(rest);
     case "hook":
       return runHookCommand(rest);
+    case "new": {
+      // Lazy, and from the subpath: the capture form must not drag the board,
+      // the harvest view and their evidence caches into a popup.
+      const { runNewTask } = await import("@collie/tui/new");
+      return runNewTask({ popup: rest.includes("--popup") });
+    }
     case "tui": {
       // Lazy import keeps ink/react out of dispatcher and hook processes.
       const { runTui } = await import("@collie/tui");

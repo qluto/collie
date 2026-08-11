@@ -6,6 +6,7 @@ export * from "./store.ts";
 export * from "./journal.ts";
 export * from "./herdr/types.ts";
 export * from "./herdr/client.ts";
+export * from "./herdr/notify.ts";
 export * from "./schedule.ts";
 export * from "./presence.ts";
 export * from "./repos.ts";

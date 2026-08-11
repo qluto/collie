@@ -49,29 +49,67 @@ frames), `COLLIE_CCUSAGE_BIN` (fixture script instead of real ccusage).
    `collie task complete <id>` (pre-allowed in generated permissions) →
    review; a human promotes to done in the TUI.
 
-## Herdr 0.7.1 wire facts (live-verified; docs at herdr.dev describe a NEWER build)
+## Herdr 0.8.0 wire facts (live-probed 2026-08-11; protocol 19)
 
-- Newline-JSON over `~/.config/herdr/herdr.sock`. Error frames can LOSE the
-  request id → never multiplex; `HerdrClient.request` = one connection per
-  call, `subscribe` = dedicated connection per pane. Subscribe BEFORE acting.
-- `agent.prompt` / `pane.run` do not exist on the wire; enums are snake_case
-  (`recent_unwrapped`); `events.wait` is not_implemented.
-- `agent.send` does NOT press Enter (`pane.send_keys` with "Enter" does);
-  pane text hard-wraps → compare whitespace-stripped when verifying echoes.
+**`herdr --skill` prints herdr's own agent-facing manual and `herdr <group>`
+(no subcommand) prints that group's exact syntax — read those before guessing.
+The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
+`pane.run` does not exist on the wire.**
+
+> ⚠ **DISPATCH IS BROKEN ON 0.8.0 UNTIL MIGRATED.** `agent.start` changed
+> shape (below) and rejects collie's call with `invalid_request: missing field
+> 'kind'`, so every spawn fails and burns an attempt. See `tasks/todo.md`.
+
+- Newline-JSON over `~/.config/herdr/herdr.sock`. Error frames could LOSE the
+  request id on 0.7.1 → never multiplex; `HerdrClient.request` = one connection
+  per call, `subscribe` = dedicated connection per pane. Subscribe BEFORE
+  acting. (Not re-tested on 0.8.0; the rule costs nothing.)
+- `agent.start` = `{name, kind, pane_id, args?, timeout_ms?}` and **creates no
+  layout**: it adopts an EXISTING shell pane sitting at its prompt. `cwd` and
+  `env` are gone from the call — they are properties of the pane you make
+  first (`workspace.create` takes `--env`, `pane.split` takes `--cwd --env`,
+  `worktree.create` takes NEITHER). Unknown fields are still silently ignored,
+  so the old `{argv, cwd, workspace_id, env}` would be dropped without a word
+  once `kind` is supplied. Consequences for the migration: the root pane of a
+  created workspace IS the agent's pane (do not close it), and native claude
+  flags ride in `args`, not `argv`.
+- `agent.prompt {target, text, wait?, until?, timeout_ms?}` EXISTS now and
+  "atomically submits text and encoded Enter while honoring the pane's live
+  bracketed-paste mode" — it replaces send → verify-echo → `pane.send_keys
+  Enter`. `wait` settles on the first `idle`/`done`/`blocked`; a prompt that
+  produces no lifecycle change within 5s answers `agent_prompt_stalled`.
+- Blocking waits are implemented (they were `not_implemented` on 0.7.1):
+  `agent.wait {target, until?[], timeout_ms?}`, `pane.wait_for_output`
+  (`match` is an internally-tagged enum, not a bare string), `events.wait`
+  (requires `match_event`). The dispatcher's 2s poll loops predate them.
+- `pane.send_input` = atomic text+Enter for a pane that holds no agent (this is
+  what the CLI's `pane run` calls). `agent.send` still does NOT press Enter,
+  and pane text still hard-wraps → compare whitespace-stripped.
+- `pane.focus {pane_id}` exists now; `agent.focus {target}` still works and is
+  what the TUI's jump uses.
 - Agent status is screen-scraped and NOT truth: boot spinner reads "working",
   the folder-trust dialog reads "blocked" (dispatcher auto-confirms it),
-  `done` = idle+unseen and is erased when a human views the tab. Readiness =
-  live `agent.get` returning `idle`, nothing else.
-- `agent.start` names are server-unique → the task id is used as agent name.
+  `unknown` means "present but unclassified", never "finished". `idle` means
+  ready AND its tab has been seen; `done` is that same idle state after unseen
+  background work. **Reads over the CLI/API do not mark a tab seen — a focus
+  command does**, so the TUI's jump is what erases `done`, not its polling.
+- Agent names match `[a-z][a-z0-9_-]{0,31}`, must be unique among LIVE agents,
+  and are released when the agent exits — collie's task ids satisfy the
+  pattern, and a surviving pane is still what makes a retry hit
+  `agent_name_taken`.
+- Pane ids are workspace-qualified (`w1:p1`) and are NOT reused; a pane moved
+  to another workspace gets a NEW id (`pane.move` answers both).
 - `worktree.create` returns a full workspace + root pane; spawn into that
-  workspace. Retry path: `worktree.open`, then agents-scan fallback.
-- `agent.start` ALWAYS splits off a new pane — there is no "run in this pane"
-  argument, and unknown fields are silently ignored (passing `pane_id`/`target`
-  spawns anyway). Dispatch therefore closes the root pane of a workspace it
-  created, so a task's workspace holds only its agent. Never close the root
-  pane from the `worktree.open` path: that workspace may already be a human's.
+  workspace. Retry path: `worktree.open`, then agents-scan fallback. Never
+  close the root pane from the `worktree.open` path — that workspace may
+  already be a human's.
 - Sidebar decoration uses `pane.report_metadata` ONLY (with persisted seq) —
   `pane.report_agent` would feed back into the agent_status we read.
+- Popups (new in 0.8.0): `[[keys.command]] type = "popup"` opens a
+  session-modal terminal without touching the tab layout, sized in cells or
+  percentages, inheriting the calling pane's cwd. One per session
+  (`popup already open`), and `popup.close` names no id — which is why only
+  `collie new --popup`, the process that knows it IS the popup, calls it.
 
 ## Quota: real percentages, not token estimates
 
@@ -196,8 +234,19 @@ frames), `COLLIE_CCUSAGE_BIN` (fixture script instead of real ccusage).
   yoga cannot round differently than that arithmetic did; the focused column
   is widened (FOCUS_SHARE, capped at MAX_FOCUS) because five columns of a
   normal terminal leave ~15 cells — too narrow for a Japanese title.
-- Jumping to a task's pane uses `agent.focus {target: paneId}` — 0.7.1 has no
-  `pane.focus`, and tab/workspace focus need ids a task may not carry.
+- Jumping to a task's pane uses `agent.focus {target: paneId}` (0.8.0 also has
+  `pane.focus`; tab/workspace focus need ids a task may not carry). Focusing is
+  also what marks a tab seen, i.e. what turns herdr's `done` badge off.
+- `collie new [--popup]` is the capture form alone, for a herdr `type = "popup"`
+  keybinding (`prefix+t`): the popup inherits the calling pane's cwd, so
+  `repoRootOf(cwd)` — the MAIN repo, via `--git-common-dir`, so standing in a
+  collie worktree does not propose a worktree of a worktree — heads the repo
+  candidates. It says everything twice (stdout for a terminal, `showNotification`
+  for a popup that is about to vanish) and only closes the popup with `--popup`.
+  Its one layout constraint: the form's inputs park the hardware cursor at
+  `REPO_ROW`/`TITLE_ROW` counted from the top of the SCREEN, so the standalone
+  view must keep exactly one header line above the form, like the TUI's tab bar
+  (`newTask.test.tsx` asserts it).
 - `collie done` closes the review loop from wherever the human is: explicit id
   → `COLLIE_TASK_ID` (typed as `!collie done` in the agent's own input box) →
   the task owning `HERDR_ACTIVE_PANE_ID`/`HERDR_PANE_ID`. Bound to a herdr key

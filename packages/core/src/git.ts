@@ -28,6 +28,21 @@ export function mergedBranches(repoRoot: string): string[] {
   return res.ok ? res.out.split("\n").map((b) => b.trim()).filter(Boolean) : [];
 }
 
+/**
+ * The MAIN repository containing `dir`, or null when it is not in a git
+ * worktree at all. Deliberately not `--show-toplevel`: standing inside one of
+ * collie's own worktrees, that answers the worktree checkout, and a task
+ * created against it would spawn a worktree of a worktree. `--git-common-dir`
+ * points at the main repo's .git from anywhere, linked worktrees included.
+ */
+export function repoRootOf(dir: string): string | null {
+  if (!fs.existsSync(dir)) return null;
+  const common = git(dir, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  if (!common.ok || !common.out) return null;
+  // bare repos have no working tree to create tasks against
+  return common.out.endsWith("/.git") ? common.out.slice(0, -"/.git".length) : null;
+}
+
 /** Uncommitted or untracked files in a worktree; empty means safe to remove. */
 export function dirtyFiles(worktreePath: string): string[] {
   if (!fs.existsSync(worktreePath)) return [];

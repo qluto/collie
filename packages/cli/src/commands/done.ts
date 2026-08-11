@@ -1,5 +1,7 @@
 import { parseArgs } from "node:util";
-import { dirtyFiles, HerdrClient, listTasks, loadConfig, markDone, type Task } from "@collie/core";
+import {
+  dirtyFiles, HerdrClient, listTasks, loadConfig, markDone, showNotification, type Task,
+} from "@collie/core";
 
 /**
  * Where the task id comes from, in order of directness:
@@ -24,24 +26,6 @@ function resolveTaskId(explicit: string | undefined): { id: string } | { error: 
   const live = listTasks({ status: ["running", "blocked", "review"] }).find(owns);
   const hit = live ?? listTasks().find(owns);
   return hit ? { id: hit.id } : { error: `no collie task owns pane ${paneId}` };
-}
-
-/**
- * Best-effort toast. Bound to a herdr key with type = "shell" the command runs
- * detached, so stdout reaches nobody and this is the only live feedback — but
- * herdr answers {shown:false, reason:"disabled"} when the user has toasts off
- * ([ui.toast] delivery), so the caller must not assume it landed.
- */
-async function notify(body: string, sound: "done" | "request"): Promise<boolean> {
-  try {
-    const client = new HerdrClient(loadConfig().herdr.socketPath);
-    const res = await client.request<{ shown?: boolean }>("notification.show", {
-      title: "collie", body, sound,
-    });
-    return res.shown === true;
-  } catch {
-    return false; // herdr may not be running; the CLI still did its job
-  }
 }
 
 /**
@@ -112,7 +96,7 @@ export async function runDoneCommand(argv: string[]): Promise<number> {
   const resolved = resolveTaskId(positionals[0]);
   if ("error" in resolved) {
     console.error(`collie: ${resolved.error}`);
-    await notify(resolved.error, "request");
+    await showNotification(resolved.error, "request");
     return 1;
   }
   try {
@@ -129,14 +113,14 @@ export async function runDoneCommand(argv: string[]): Promise<number> {
     if (!wantClose && task.run?.paneId) await markPaneDone(task.run.paneId, task.id);
 
     const body = closed ? `${task.title} → done (${closed})` : `${task.title} → done`;
-    if (!(await notify(body, "done"))) {
+    if (!(await showNotification(body, "done"))) {
       console.log('(herdr toast suppressed — set [ui.toast] delivery = "herdr" to see it)');
     }
     return 0;
   } catch (err) {
     const msg = (err as Error).message;
     console.error(`collie: ${msg}`);
-    await notify(msg, "request");
+    await showNotification(msg, "request");
     return 1;
   }
 }

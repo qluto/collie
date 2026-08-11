@@ -523,3 +523,45 @@ Plan: /Users/qluto/.claude/plans/temporal-crafting-badger.md
 - [x] 同じ理由で載っていなかった `dispatch.asking_limit` / `[quota.burn_down]` /
       `[forecast]` / `[done]` も、実効値と同じ内容でコメントアウト追記。追記後に
       loadConfig で全キーの値が変わっていないことを確認（コメントは無害）。
+
+# collie new（herdr ポップアップからの投函）
+
+- [x] core: `repoRootOf(dir)`（`--git-common-dir` 基準。`--show-toplevel` だと
+      collie 自身の worktree の中で「worktree の worktree」を提案してしまう）
+- [x] core: `showNotification` / `closePopup` を `herdr/notify.ts` に集約。
+      done.ts のローカル notify を差し替え（同じ contract）
+- [x] tui: `src/new.tsx` = 単体キャプチャフォーム。ヘッダー1行は装飾ではなく
+      **IME のカーソル固定行に合わせるための必須**（TUI のタブバー1行と同じ高さ）
+- [x] tui: `editInEditor` に `restoreAltScreen` オプション（単体コマンドは
+      $EDITOR の後に alt screen へ戻ってはいけない — 最後の出力が消える）
+- [x] cli: `collie new [--popup]`。`@collie/tui/new` サブパスから遅延 import
+      （board / harvest をポップアップに引きずり込まない）
+- [x] test: 標準入力行が REPO_ROW / TITLE_ROW と一致することを assert（定数を
+      export して両方から参照）
+- [x] `~/.config/herdr/config.toml` に `prefix+t` の `type = "popup"` を追記。
+      `herdr config check` → ok、`herdr server reload-config` → applied
+- [x] 実機: 使い捨て workspace で `collie new` を通し、cwd のリポジトリが候補の
+      先頭に出ること・日本語タイトル・$EDITOR・タスク生成・`queued <id>` 表示まで
+      確認。`--popup` をポップアップ外で使ってもハングしない（popup_not_open は握る）
+- [ ] **人間の確認待ち**: 実際に ctrl+j → t でポップアップが開くか。keybinding は
+      herdr のキー処理で捕まるため `pane.send_keys` からは発火できない（PTY に
+      書くだけなので素通りする）。
+
+# ⚠ herdr 0.8.0 で dispatch が壊れている（0.7.1 → 0.8.0 の非互換）
+
+`agent.start` が `{name, kind, pane_id, args?, timeout_ms?}` になり、**レイアウトを
+作らなくなった**（既存のシェルペインを乗っ取る）。collie は `{name, argv, cwd,
+workspace_id, env, focus}` を送っているので `invalid_request: missing field 'kind'`
+で必ず失敗する。unknown フィールドは今も黙って捨てられるので、`kind` を足すだけでは
+cwd/env/argv が全部落ちて動かない。現在キューは空なので実害は出ていない。
+
+移行の形（実測済み）:
+- ペインを先に作る: `workspace.create` は `--env` を取る／`pane.split` は
+  `--cwd --env` を取る／**`worktree.create` はどちらも取らない**
+- そのペインに `agent.start {name, kind:"claude", pane_id, args:[...]}`
+- 作った workspace のルートペインが**そのままエージェントのペイン**になるので、
+  今の「ルートペインを閉じる」処理は削除する
+- ついでに: `agent.prompt`（text + Enter をアトミックに、bracketed-paste 対応、
+  `wait` で idle/done/blocked まで待つ）が inject + エコー検証 + Enter を置き換える。
+  `agent.wait` / `pane.wait_for_output` / `events.wait` も実装済みで、2秒ポーリングの
+  ループを畳める

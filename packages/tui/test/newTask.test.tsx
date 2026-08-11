@@ -111,3 +111,24 @@ describe("NewTaskForm", () => {
     expect(cancelled).toBe(true);
   });
 });
+
+describe("collie new (standalone popup form)", () => {
+  // The inputs park the hardware cursor at REPO_ROW/TITLE_ROW counted from the
+  // top of the screen, so the popup view must spend exactly as many lines above
+  // the form as the TUI does. This test is what notices when it stops doing so.
+  test("the inputs land on the rows the cursor is parked at", async () => {
+    const { REPO_ROW, TITLE_ROW } = await import("../src/views/newTask.tsx");
+    const { Standalone } = await import("../src/new.tsx");
+
+    const repoStep = render(<Standalone knownRepos={REPOS} onDone={() => {}} />);
+    const repoLines = lines(repoStep.lastFrame()!);
+    repoStep.unmount();
+    expect(repoLines.findIndex((l) => l.includes("repo:")) + 1).toBe(REPO_ROW);
+
+    const titleStep = render(<Standalone knownRepos={REPOS} onDone={() => {}} />);
+    await type(titleStep.stdin, "two", "\r");
+    const titleLines = lines(titleStep.lastFrame()!);
+    titleStep.unmount();
+    expect(titleLines.findIndex((l) => l.includes("title:")) + 1).toBe(TITLE_ROW);
+  });
+});
