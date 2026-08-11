@@ -31,6 +31,11 @@ export interface TaskRun {
   tabId?: string;
   workspaceId?: string;
   worktreePath?: string;
+  /**
+   * Commit the task's branch started from. What makes "the branch is contained
+   * in HEAD" mean "the work landed" instead of "the branch never moved".
+   */
+  baseCommit?: string;
   sessionId?: string;
   lastHeartbeatAt?: string;
   idleSince?: string;

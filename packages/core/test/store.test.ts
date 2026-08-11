@@ -242,6 +242,21 @@ describe("archiving", () => {
     expect(getTask(t.id)!.status).toBe("done");
   });
 
+  test("done -> review walks the task back out of the archive", () => {
+    const t = createTask({ title: "x", repo: "/tmp", prompt: "p" });
+    transition(t.id, "running");
+    transition(t.id, "review");
+    transition(t.id, "done");
+
+    const back = transition(t.id, "review", undefined, { source: "tui" });
+    expect(back.status).toBe("review");
+    expect(fs.existsSync(livePath(t.id))).toBe(true);
+    // both copies would list the task twice and archive it back on the next done
+    expect(fs.existsSync(archivedPath(t.id))).toBe(false);
+    expect(listTasks().map((x) => x.id)).toContain(t.id);
+    expect(listTasks({ includeArchived: true }).filter((x) => x.id === t.id).length).toBe(1);
+  });
+
   test("a half-migrated home lists the task once, from the live file", () => {
     const t = createTask({ title: "z", repo: "/tmp", prompt: "p" });
     transition(t.id, "running");

@@ -12,6 +12,7 @@ export * from "./presence.ts";
 export * from "./repos.ts";
 export * from "./prompt.ts";
 export * from "./git.ts";
+export * from "./branches.ts";
 export * from "./quota/gate.ts";
 export * from "./quota/limits-api.ts";
 export * from "./quota/forecast.ts";

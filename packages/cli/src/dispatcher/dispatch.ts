@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { HerdrError, getTask, transition, updateTask } from "@collie/core";
+import { HerdrError, getTask, headCommit, transition, updateTask } from "@collie/core";
 import type { Task } from "@collie/core";
 import { log, trackPane, untrackPane, type DispatcherCtx } from "./ctx.ts";
 import { pointerPrompt, settingsPath, writeRunArtifacts } from "./artifacts.ts";
@@ -338,10 +338,19 @@ export async function dispatchTask(ctx: DispatcherCtx, task: Task): Promise<void
     return;
   }
 
+  // The fresh checkout's HEAD is the branch's fork point. Recorded now because
+  // afterwards there is nothing left to compare against: a branch that never
+  // got a commit and one whose commits were merged both read as "contained in
+  // HEAD" (see branches.ts).
+  const base = task.worktree ? headCommit(cwd) : null;
   transition(
     task.id,
     "running",
-    { paneId, tabId, workspaceId, ...(task.worktree ? { worktreePath: cwd } : {}) },
+    {
+      paneId, tabId, workspaceId,
+      ...(task.worktree ? { worktreePath: cwd } : {}),
+      ...(base ? { baseCommit: base } : {}),
+    },
     { source: "dispatcher" },
   );
   await reportStatus(ctx, task.id, paneId, `collie ▶ ${task.title}`);

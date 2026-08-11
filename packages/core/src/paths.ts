@@ -42,6 +42,11 @@ export function limitsStatePath(): string {
   return path.join(hubHome(), "limits.json");
 }
 
+/** Cached answer to "did each task's branch land?" (see branches.ts). */
+export function branchScanPath(): string {
+  return path.join(hubHome(), "branches.json");
+}
+
 export function lockPath(): string {
   return path.join(hubHome(), "lock");
 }

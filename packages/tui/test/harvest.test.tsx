@@ -160,6 +160,33 @@ describe("Harvest", () => {
     expect(frame).toContain("live one");
   });
 
+  test("dropped work sits between the failures and the archive, branch first", () => {
+    const dropped = [
+      task({ id: "x-1", status: "done", title: "tutorial rework", branch: "collie/x-1",
+        endedAt: "2026-08-11T02:04:00Z", run: { resultSummary: "not taken" } }),
+    ];
+    const { lastFrame } = render(
+      <Harvest tasks={[task({ id: "t-1", status: "failed", title: "broken one" })]} focusIdx={0}
+        columns={80} rows={24} diffFor={() => "1 commit · 11 files +621 −175"}
+        questionFor={noQuestion} dropped={dropped} archived={[]} archivedTotal={3} />,
+    );
+    const frame = lastFrame()!;
+    expect(frame).toContain("🗑 Dropped  1 · x discard · u reopen");
+    expect(frame).toContain("tutorial rework");
+    // the branch and its weight, because those are what `x` throws away
+    expect(frame).toContain("collie/x-1 · 1 commit · 11 files +621 −175");
+    expect(frame.indexOf("broken one")).toBeLessThan(frame.indexOf("tutorial rework"));
+    expect(frame.indexOf("tutorial rework")).toBeLessThan(frame.indexOf("📦 Done"));
+  });
+
+  test("no dropped work, no dropped group", () => {
+    const { lastFrame } = render(
+      <Harvest tasks={[task({ id: "t-1", status: "review", title: "live one" })]} focusIdx={0}
+        columns={80} rows={24} diffFor={noDiff} questionFor={noQuestion} dropped={[]} />,
+    );
+    expect(lastFrame()!).not.toContain("🗑");
+  });
+
   test("an empty archive gets no line at all — even with nothing to harvest", () => {
     const { lastFrame } = render(
       <Harvest tasks={[]} focusIdx={0} columns={80} rows={24} diffFor={noDiff}
@@ -266,10 +293,12 @@ describe("harvestList", () => {
     expect(harvestList([])).toEqual([]);
   });
 
-  test("archived tasks are appended last, and only via the archived argument", () => {
+  test("dropped then archived are appended last, and only via their arguments", () => {
     const live = [task({ id: "r1", status: "review" }), task({ id: "f1", status: "failed" })];
     const archived = [task({ id: "d1", status: "done" }), task({ id: "d2", status: "done" })];
-    expect(harvestList(live, archived).map((t) => t.id)).toEqual(["r1", "f1", "d1", "d2"]);
+    const dropped = [task({ id: "x1", status: "done" })];
+    expect(harvestList(live, { dropped, archived }).map((t) => t.id))
+      .toEqual(["r1", "f1", "x1", "d1", "d2"]);
     // a done task that somehow sits in the working set still drops out
     expect(harvestList([...live, task({ id: "d3", status: "done" })]).map((t) => t.id))
       .toEqual(["r1", "f1"]);

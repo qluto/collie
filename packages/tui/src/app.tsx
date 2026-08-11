@@ -5,9 +5,9 @@ import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
   DEFAULT_CONFIG, blockedUntil, cancelTask, computeForecast, configPath, createTask, diffSummary,
-  discoverRepos, forecastLine, formatClock, listArchived, loadConfig, markDone, readLimits,
-  refreshLimits, resolveMode, retryTask, runsDir, stripPromptTemplate, taskFilePath, transition,
-  updateTask,
+  discardTaskWork, discoverRepos, droppedTasks, forecastLine, formatClock, listArchived, loadConfig,
+  markDone, readLimits, refreshBranchScan, refreshLimits, resolveMode, retryTask, runsDir,
+  stripPromptTemplate, taskFilePath, transition, updateTask,
 } from "@collie/core";
 import type { Config, LimitSnapshot, Task } from "@collie/core";
 import { useHubSnapshot, type HubSnapshot } from "./state.ts";
@@ -32,7 +32,8 @@ type Overlay =
   | { kind: "detail"; taskId: string }
   | { kind: "new" }
   | { kind: "answer"; taskId: string }
-  | { kind: "confirm-cancel"; taskId: string };
+  | { kind: "confirm-cancel"; taskId: string }
+  | { kind: "confirm-discard"; taskId: string };
 
 /**
  * The harvest cards want a git shortstat and a scraped pane per task, both of
@@ -174,6 +175,11 @@ function App(): React.JSX.Element {
     [snap.refreshedAt, archiveOpen],
   );
 
+  // Done tasks whose branch never landed. The scan behind this is git-side and
+  // file-cached (branches.ts): re-running it on every 2s snapshot costs one
+  // JSON read, and the dispatcher's tick usually refreshed it already.
+  const dropped = useMemo(() => droppedTasks(), [snap.refreshedAt]);
+
   // config.toml is a file read: once per snapshot, not once per keystroke
   const config = useMemo(() => {
     try {
@@ -274,6 +280,19 @@ function App(): React.JSX.Element {
       } else if (key.escape || input === "n") setOverlay({ kind: "none" });
       return;
     }
+    if (overlay.kind === "confirm-discard") {
+      if (input === "y") {
+        const task = dropped.find((t) => t.id === overlay.taskId);
+        setOverlay({ kind: "none" });
+        if (!task) return;
+        const res = discardTaskWork(task);
+        // The card is gone the moment the branch is: nothing else defines it.
+        refreshBranchScan({ maxAgeSec: 0 });
+        refresh();
+        flashMsg(res.ok ? res.message : `discard failed: ${res.message}`);
+      } else if (key.escape || input === "n") setOverlay({ kind: "none" });
+      return;
+    }
     if (overlay.kind === "new" || overlay.kind === "answer") return; // forms handle their own input
 
     // global
@@ -286,8 +305,9 @@ function App(): React.JSX.Element {
     else if (tab === "config" && input === "e") {
       if (editFileInEditor(configPath())) refresh();
     } else if (tab === "harvest") {
-      const items = harvestList(snap.tasks, archive.tasks);
+      const items = harvestList(snap.tasks, { dropped, archived: archive.tasks });
       const task = items[Math.min(focusIdx, items.length - 1)];
+      const isDropped = !!task && dropped.some((d) => d.id === task.id);
       if (input === "A") {
         setArchiveOpen((v) => !v);
       } else if (input === "j" || key.downArrow) {
@@ -314,6 +334,14 @@ function App(): React.JSX.Element {
         else flashMsg("a answers a task blocked on a question");
       } else if (input === "r" && task && (task.status === "review" || task.status === "failed")) {
         act(() => retryTask(task.id, { source: "tui" }));
+      } else if (input === "x" && task) {
+        if (isDropped) setOverlay({ kind: "confirm-discard", taskId: task.id });
+        else flashMsg("x throws away a dropped task's branch");
+      } else if (input === "u" && task) {
+        // Back into the working set: the archived file walks out of the archive
+        // (store.transition), so the task lands in ✅ Review with its pane info.
+        if (isDropped) act(() => transition(task.id, "review", undefined, { source: "tui" }));
+        else flashMsg("u reopens a dropped task");
       }
     } else if (tab === "board") {
       const items = columnTasks(snap.tasks, focusCol);
@@ -363,6 +391,7 @@ function App(): React.JSX.Element {
   const detailTask =
     overlay.kind === "detail"
       ? snap.tasks.find((t) => t.id === overlay.taskId) ??
+        dropped.find((t) => t.id === overlay.taskId) ??
         archive.tasks.find((t) => t.id === overlay.taskId)
       : undefined;
   const answerTask =
@@ -447,6 +476,7 @@ function App(): React.JSX.Element {
           rows={bodyRows}
           diffFor={diffFor}
           questionFor={questionFor}
+          dropped={dropped}
           archived={archive.tasks}
           archivedTotal={archive.total}
           archiveOpen={archiveOpen}
@@ -455,6 +485,14 @@ function App(): React.JSX.Element {
         <Board tasks={snap.tasks} focusCol={focusCol} focusRow={focusRow} now={snap.refreshedAt} columns={columns} rows={bodyRows} />
       ) : (
         <ConfigView columns={columns} rows={bodyRows} />
+      )}
+      {overlay.kind === "confirm-discard" && (
+        <Box borderStyle="round" borderColor="red" paddingX={1}>
+          <Text>
+            {`delete ${dropped.find((t) => t.id === overlay.taskId)?.branch ?? "branch"}, its commits and its worktree? `}
+            <Text bold>y</Text>/n
+          </Text>
+        </Box>
       )}
       {overlay.kind === "confirm-cancel" && (
         <Box borderStyle="round" borderColor="red" paddingX={1}>

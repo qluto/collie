@@ -182,6 +182,31 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
   question must not linger. Harvest's `a` answers via `agent.send` + explicit
   `pane.send_keys` Enter and leaves status alone (the stop hook unblocks).
 
+- `done` ≠ merged, and the difference is the point. Merging a task's branch IS
+  the review, so the dispatcher's `adoptMerged` promotes a `review` task whose
+  branch HEAD already contains straight to `done` (`source: merge-detect`) —
+  and what is left in `done` with an unmerged branch is therefore work the human
+  looked at and dropped, which harvest shows as `🗑 Dropped` (`x` discards,
+  `u` reopens). Three constraints hold that up:
+  1. `run.baseCommit` (recorded at dispatch from the fresh checkout's HEAD) is
+     what makes "contained in HEAD" mean "landed": a branch that never got a
+     commit is contained from birth, and auto-completing it would archive a
+     task — an uncommitted plan, say — no human ever read. No baseCommit (older
+     tasks) = never auto-adopted.
+  2. Nothing is recorded on the task. Dropped-ness is re-derived from git every
+     scan (`core/branches.ts`), so merging a dropped task's branch a week later
+     un-drops it and discarding the branch ends it, with no field to go stale
+     and no second truth to disagree with gc.
+  3. The scan runs from the BRANCH side (unmerged `collie/*` whose id is not in
+     the working set), never by walking the archive — that directory only
+     grows. Its repo roster lives in `branches.json`, seeded from the working
+     set and kept while any collie branch survives; only a cold start (no file
+     yet) reads a bounded slice of the archive to find repos at all.
+  `done→review` is legal so `u` can work, and `transition` deletes the archived
+  copy after writing the live one (a crash leaves a duplicate, never nothing).
+  `discardTaskWork` is the one destructive path: worktree → prune → `branch -D`,
+  refusing outright on tracked changes. That ORDER is not optional — git will
+  not delete a branch a checkout still holds.
 - `collie gc` reports a task ONLY while something collectable survives: the
   archive grows forever, so "branch already deleted by a human" has to drop out
   of the output (counted as `already clean`) rather than reappear every run.

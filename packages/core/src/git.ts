@@ -28,15 +28,35 @@ export function mergedBranches(repoRoot: string): string[] {
   return res.ok ? res.out.split("\n").map((b) => b.trim()).filter(Boolean) : [];
 }
 
+export interface BranchState {
+  /** branch name -> tip commit; its keys are "does this branch still exist". */
+  tips: Map<string, string>;
+  /** branches HEAD already contains (see mergedBranches). */
+  merged: Set<string>;
+}
+
 /**
- * Every local branch name. gc asks "does this branch still exist?" once per
- * repo instead of once per task: a human who merged and deleted a collie branch
- * by hand leaves nothing behind, and that has to read as "already collected",
- * never as an unanswerable question.
+ * Everything anyone asks about a repo's branches, in two calls. Per repo, not
+ * per task: a human who merged and deleted a collie branch by hand leaves
+ * nothing behind, and that has to read as "already collected" rather than as an
+ * unanswerable question — which means existence is checked before merge is.
  */
-export function localBranches(repoRoot: string): string[] {
-  const res = git(repoRoot, ["branch", "--format=%(refname:short)"]);
-  return res.ok ? res.out.split("\n").map((b) => b.trim()).filter(Boolean) : [];
+export function branchState(repoRoot: string): BranchState {
+  const res = git(repoRoot, ["branch", "--format=%(refname:short)%09%(objectname)"]);
+  const tips = new Map<string, string>();
+  if (res.ok) {
+    for (const line of res.out.split("\n")) {
+      const [name, sha] = line.split("\t");
+      if (name && sha) tips.set(name.trim(), sha.trim());
+    }
+  }
+  return { tips, merged: new Set(mergedBranches(repoRoot)) };
+}
+
+/** Commit a checkout currently sits on; the base a task's branch grew from. */
+export function headCommit(dir: string): string | null {
+  const res = git(dir, ["rev-parse", "HEAD"]);
+  return res.ok && res.out.length > 0 ? res.out : null;
 }
 
 /**
@@ -161,4 +181,14 @@ export function pruneWorktrees(repoRoot: string): GitResult {
 /** `git branch -d`: safe by construction, it refuses unmerged branches. */
 export function deleteMergedBranch(repoRoot: string, branch: string): GitResult {
   return git(repoRoot, ["branch", "-d", branch]);
+}
+
+/**
+ * `git branch -D` — throws away commits nobody else has. Deliberately a
+ * separate function from deleteMergedBranch, whose whole value is that git
+ * refuses: this one is only ever reached through a human confirming that the
+ * work is being dropped.
+ */
+export function discardBranch(repoRoot: string, branch: string): GitResult {
+  return git(repoRoot, ["branch", "-D", branch]);
 }

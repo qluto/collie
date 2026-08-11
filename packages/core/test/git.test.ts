@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
-  commitsAhead, deleteMergedBranch, diffSummary, dirtyFiles, dirtyState, localBranches,
+  branchState, commitsAhead, deleteMergedBranch, diffSummary, dirtyFiles, dirtyState, headCommit,
   mergedBranches, pruneWorktrees, removeWorktree,
 } from "../src/git.ts";
 
@@ -54,12 +54,17 @@ describe("git helpers", () => {
     expect(commitsAhead(repo, "collie/merged")).toEqual([]);
   });
 
-  test("localBranches answers what still exists", () => {
+  test("branchState answers existence and merge in one look", () => {
     run(repo, "branch", "collie/one");
-    expect(localBranches(repo)).toEqual(expect.arrayContaining(["main", "collie/one"]));
+    const state = branchState(repo);
+    expect([...state.tips.keys()]).toEqual(expect.arrayContaining(["main", "collie/one"]));
+    expect(state.tips.get("collie/one")).toBe(headCommit(repo)!); // tip, not a name
+    expect(state.merged.has("collie/one")).toBe(true);
+
     run(repo, "branch", "-D", "collie/one");
-    expect(localBranches(repo)).not.toContain("collie/one");
-    expect(localBranches(path.join(repo, "nope"))).toEqual([]);
+    expect(branchState(repo).tips.has("collie/one")).toBe(false);
+    expect(branchState(path.join(repo, "nope")).tips.size).toBe(0);
+    expect(headCommit(path.join(repo, "nope"))).toBeNull();
   });
 
   test("deleteMergedBranch refuses an unmerged branch and accepts a merged one", () => {

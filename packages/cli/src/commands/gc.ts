@@ -1,9 +1,9 @@
 import * as fs from "node:fs";
 import { parseArgs } from "node:util";
 import {
-  archivedTaskFilePath, commitsAhead, deleteMergedBranch, dirtyState, ensureDataDirs, listTasks,
-  localBranches, mergedBranches, pruneWorktrees, removeWorktree, taskFilePath, withLock,
-  type Task,
+  archivedTaskFilePath, branchState, commitsAhead, deleteMergedBranch, dirtyState, ensureDataDirs,
+  listTasks, pruneWorktrees, removeWorktree, taskFilePath, withLock,
+  type BranchState, type Task,
 } from "@collie/core";
 
 interface Verdict {
@@ -16,11 +16,6 @@ interface Sweep {
   verdicts: Verdict[];
   /** Finished tasks with nothing left to collect — counted, never listed. */
   clean: number;
-}
-
-interface RepoView {
-  branches: Set<string>;
-  merged: Set<string>;
 }
 
 /**
@@ -38,14 +33,14 @@ interface RepoView {
 function collect(dryRun: boolean, force: boolean): Sweep {
   const finished = listTasks({ status: ["done", "failed"], includeArchived: true })
     .filter((t) => t.worktree && t.branch);
-  const views = new Map<string, RepoView>();
-  const view = (repo: string): RepoView => {
+  const views = new Map<string, BranchState>();
+  const view = (repo: string): BranchState => {
     if (!views.has(repo)) {
       // Prune FIRST: a checkout a human deleted with rm leaves an admin entry,
       // and git refuses to delete a branch "used by" it — the branch would be
       // stuck for good. Prune only forgets worktrees already gone from disk.
       if (!dryRun) pruneWorktrees(repo);
-      views.set(repo, { branches: new Set(localBranches(repo)), merged: new Set(mergedBranches(repo)) });
+      views.set(repo, branchState(repo));
     }
     return views.get(repo)!;
   };
@@ -61,8 +56,8 @@ function collect(dryRun: boolean, force: boolean): Sweep {
       sweep.clean++;
       continue;
     }
-    const { branches, merged } = view(task.repo);
-    const branchLeft = branches.has(branch);
+    const { tips, merged } = view(task.repo);
+    const branchLeft = tips.has(branch);
     if (!branchLeft && !checkoutLeft) {
       sweep.clean++;
       continue;

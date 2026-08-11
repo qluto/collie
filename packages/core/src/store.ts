@@ -20,7 +20,9 @@ const LEGAL_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   running: ["blocked", "review", "failed", "queued"],
   blocked: ["running", "review", "failed", "queued"], // blocked→queued: pane died while blocked
   review: ["done", "queued"],
-  done: [],
+  // done→review is the undo for a task closed too fast (the harvest's `u`): it
+  // walks back out of the archive into the working set.
+  done: ["review"],
   failed: ["queued"],
 };
 
@@ -258,6 +260,10 @@ export function transition(
     // A done task leaves the working set: write the final content first, then
     // move it, so the archived file is the complete record either way.
     if (to === "done") fs.renameSync(taskFilePath(id), archivedTaskFilePath(id));
+    // Coming back out, writeTaskFile has already put the live copy in place;
+    // dropping the archived one last means a crash leaves a duplicate rather
+    // than no task at all.
+    if (from === "done") fs.rmSync(archivedTaskFilePath(id), { force: true });
     appendEvent({
       ts: now, taskId: id, from, to,
       source: opts?.source ?? "unknown",

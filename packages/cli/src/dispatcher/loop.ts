@@ -3,6 +3,7 @@ import {
   ConfigError, dispatcherStatePath, ensureDataDirs, listTasks, loadConfig, refreshLimits,
   type DispatcherState, type ScheduleMode,
 } from "@collie/core";
+import { adoptMerged } from "./adopt.ts";
 import { createCtx, log, vlog, type DispatcherCtx } from "./ctx.ts";
 import { dispatchTask } from "./dispatch.ts";
 import { reconcile } from "./reconcile.ts";
@@ -61,6 +62,9 @@ export async function tick(ctx: DispatcherCtx): Promise<void> {
 
   await reconcile(ctx);
   await watchdog(ctx);
+  // Reads git, not herdr: a human merging a branch is a completion signal the
+  // socket never carries. Also refreshes the scan the TUI's dropped list reads.
+  adoptMerged(ctx);
 
   let mode: ScheduleMode | "degraded" = "degraded";
   if (ctx.degraded) {

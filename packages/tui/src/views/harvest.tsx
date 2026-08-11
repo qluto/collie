@@ -22,17 +22,29 @@ const FOOTER_KEYS: Array<[string, string]> = [
 ];
 const FOOTER = FOOTER_KEYS.map(([k, label]) => `${k} ${label}`).join(" · ");
 
-/** Virtual group index for the archive: it sits one past the live GROUPS. */
-const ARCHIVE_G = GROUPS.length;
+/**
+ * Virtual group indices past the live GROUPS. Dropped work sits between the
+ * failures and the archive: it is finished, so it is not urgent, but its branch
+ * is still on disk waiting for a decision, which the archive's is not.
+ */
+const DROPPED_G = GROUPS.length;
+const ARCHIVE_G = GROUPS.length + 1;
 
 /**
- * The flat, ordered list the view renders and app.tsx navigates. Archived
- * (done) tasks arrive through `archived`, never through `tasks` — a done task
- * has left the working set, so it is only ever in the list when the human
- * opened the archive.
+ * The flat, ordered list the view renders and app.tsx navigates. Both extra
+ * groups hold tasks that have left the working set, so they never arrive
+ * through `tasks`: `dropped` is done-but-never-merged (always shown, it is a
+ * pending decision), `archived` only when the human opened the archive.
  */
-export function harvestList(tasks: Task[], archived: Task[] = []): Task[] {
-  return [...GROUPS.flatMap((g) => tasks.filter((t) => t.status === g.status)), ...archived];
+export function harvestList(
+  tasks: Task[],
+  extra?: { dropped?: Task[]; archived?: Task[] },
+): Task[] {
+  return [
+    ...GROUPS.flatMap((g) => tasks.filter((t) => t.status === g.status)),
+    ...(extra?.dropped ?? []),
+    ...(extra?.archived ?? []),
+  ];
 }
 
 /** "MM-DD HH:MM", local: the archive is scanned by "when did I do this". */
@@ -102,6 +114,7 @@ function GroupHeader(props: { label: string; suffix: string; color?: string; wid
 
 function buildCards(
   tasks: Task[],
+  dropped: Task[],
   archived: Task[],
   diffFor: (t: Task) => string | null,
   questionFor: (t: Task) => string | null,
@@ -131,6 +144,16 @@ function buildCards(
       cards.push({ g, title, detail: detail.filter((l) => l.length > 0) });
     }
   });
+  for (const t of dropped) {
+    // What is still on disk, not what the session said: the branch name is the
+    // thing `x` throws away, and the diff is the size of what would go with it.
+    const meta = [stamp(t.endedAt ?? t.updatedAt), t.branch ?? "", diffFor(t) ?? ""].filter(Boolean);
+    cards.push({
+      g: DROPPED_G,
+      title: truncateToWidth(t.title, width - 2),
+      detail: [truncateToWidth(meta.join(" · "), width - 4)],
+    });
+  }
   for (const t of archived) {
     const meta = [stamp(t.endedAt ?? t.updatedAt), t.run?.resultSummary ?? ""].filter(Boolean);
     cards.push({
@@ -149,6 +172,8 @@ export function Harvest(props: {
   rows?: number;
   diffFor: (t: Task) => string | null;
   questionFor: (t: Task) => string | null;
+  /** done, but the branch never landed — the human dropped this work */
+  dropped?: Task[];
   /** the archive's most recent tasks — empty unless it is open */
   archived?: Task[];
   /** how many tasks the archive holds in total, open or not */
@@ -157,15 +182,18 @@ export function Harvest(props: {
 }): React.JSX.Element {
   const width = (props.columns ?? process.stdout.columns ?? 80) - 2;
   const rows = props.rows ?? process.stdout.rows ?? 24;
+  const dropped = props.dropped ?? [];
   const archived = props.archiveOpen ? props.archived ?? [] : [];
   const archivedTotal = props.archivedTotal ?? 0;
   const counts = [
     ...GROUPS.map((g) => props.tasks.filter((t) => t.status === g.status).length),
+    dropped.length,
     archivedTotal,
   ];
-  const cards = buildCards(props.tasks, archived, props.diffFor, props.questionFor, width);
+  const cards = buildCards(props.tasks, dropped, archived, props.diffFor, props.questionFor, width);
   const headers = [
     ...GROUPS.map((g, i) => ({ label: g.label, suffix: `${counts[i]}`, color: g.color })),
+    { label: "🗑 Dropped", suffix: `${dropped.length} · x discard · u reopen`, color: undefined },
     { label: "📦 Done", suffix: `${archivedTotal} · A to close`, color: undefined },
   ];
   // The one-line door to the archive, shown only while it is folded shut — the
