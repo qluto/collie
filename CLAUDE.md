@@ -192,8 +192,8 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
   pin, so nothing that *decides* anything is allowed to live behind it. Only
   `completedAt`/`canceledAt` are filtered server-side; "is this state already
   under way" is decided client-side, where it is tested.
-- **Which repo an issue is about is a CHAIN, not a mapping**: a `repo:<name>`
-  label, then the project name, then the team key — and at each rung the name
+- **Which repo an issue is about is a CHAIN, not a mapping**: a repo label,
+  then the project name, then the team key — and at each rung the name
   is looked up in `[linear.repos]` first, then matched by directory name
   against the checkouts under `[repos] roots` (the list collie already has for
   the new-task picker). A Linear project named like its repo needs no config at
@@ -203,6 +203,14 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
   repo; falling through would ship the work somewhere else), while an unmapped
   project falls through to the team (it is only how the board is organised).
   Every import reports `via <rung>` so a fallback is never invisible.
+- **A Linear label GROUP is how a person actually spells "which repo"**, and
+  the API hides it: a child of the group `repo` comes back as
+  `{name: "myapp", parent: {name: "repo"}}` — the group name is NOWHERE in the
+  child's own name, so prefix-matching `repo:` can never see it (live-probed
+  2026-08-12, and it is why the first real sync collected nothing).
+  `repo_label_group` reads the parent; `repo_label_prefix` keeps the flat
+  `repo:myapp` spelling working for workspaces without groups. Either may be
+  "" to switch that spelling off.
 - **A skipped issue always says why** (`no repo for OPS — add it to …`,
   `state "In Progress" is already under way`). An issue labelled for collie
   that quietly never becomes a task is the failure someone burns an evening on,

@@ -205,7 +205,9 @@ export interface Config {
      * checkout's directory name disagree — see resolveRepo.
      */
     repos: Record<string, string>;
-    /** issue-label prefix that names a repo per issue ("repo:"); "" disables */
+    /** Linear label GROUP whose child names the repo ("repo"); "" disables */
+    repoLabelGroup: string;
+    /** flat-label prefix for the same job ("repo:collie"); "" disables */
     repoLabelPrefix: string;
     /** size every imported task gets; Linear estimates are workspace-specific */
     size: TaskSize;

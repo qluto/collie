@@ -98,7 +98,11 @@ poll_interval_min = 5        # someone else's API: minutes, not the 30s tick
 size = "M"                   # imported tasks all get this size
 start_state = ""             # move the issue here on import; "" = the team's first started state
 comment = true               # comment the collie task id back onto the issue
-repo_label_prefix = "repo:"  # per-issue override, e.g. a "repo:collie" label; "" disables
+# Per-issue repo override, two spellings — a Linear label GROUP named "repo"
+# whose child is the repo name (the native way), or a flat "repo:collie"
+# label. Either may be "" to switch it off.
+repo_label_group = "repo"
+repo_label_prefix = "repo:"
 
 [linear.repos]
 # WHICH REPO an issue is about is answered most-specific-first:
@@ -165,6 +169,7 @@ export const DEFAULT_CONFIG: Config = {
     label: "collie",
     pollIntervalMin: 5,
     repos: {},
+    repoLabelGroup: "repo",
     repoLabelPrefix: "repo:",
     size: "M",
     startState: "",
@@ -337,6 +342,10 @@ export function parseConfig(toml: string): Config {
           out[team] = expandTilde(str(repo, `linear.repos.${team}`));
         }
         return out;
+      }),
+      repoLabelGroup: pick("linear.repo_label_group", d.linear.repoLabelGroup, (v) => {
+        if (typeof v !== "string") fail("linear.repo_label_group must be a string");
+        return v; // "" is meaningful: no group axis
       }),
       repoLabelPrefix: pick("linear.repo_label_prefix", d.linear.repoLabelPrefix, (v) => {
         if (typeof v !== "string") fail("linear.repo_label_prefix must be a string");

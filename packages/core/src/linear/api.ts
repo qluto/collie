@@ -18,8 +18,13 @@ export interface LinearIssue {
   state: { id: string; name: string; type: string };
   /** null on an issue that belongs to no project */
   project?: { name: string } | null;
-  /** every label, not just the marker: one of them may name the repo */
-  labels?: { nodes?: Array<{ name: string }> };
+  /**
+   * Every label, not just the marker: one of them may name the repo. Linear
+   * label GROUPS arrive as a child whose `name` is the leaf ("forge-neo-mobile")
+   * and whose `parent.name` is the group ("repo") — the group name is nowhere
+   * in the child's own name, so it has to be read from the parent.
+   */
+  labels?: { nodes?: Array<{ name: string; parent?: { name: string } | null }> };
 }
 
 export interface LinearWorkflowState {
@@ -116,7 +121,7 @@ query CollieIssues($label: String!, $first: Int!) {
       team { id key }
       state { id name type }
       project { name }
-      labels { nodes { name } }
+      labels { nodes { name parent { name } } }
     }
   }
 }`;

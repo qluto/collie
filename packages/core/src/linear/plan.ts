@@ -36,7 +36,7 @@ export function isUnstarted(state: { type: string }): boolean {
  * therefore needs no configuration at all; the table is for when the two names
  * disagree.
  *
- *   1. a `repo:<name>` label on the issue   — the per-issue escape hatch
+ *   1. a repo label on the issue           — the per-issue escape hatch
  *   2. the issue's project name             — the usual axis inside one team
  *   3. the team key                         — the whole-team default
  */
@@ -54,12 +54,32 @@ function byName(name: string, table: Record<string, string>, known: string[]): s
   return known.find((repo) => (repo.split("/").at(-1) ?? "").toLowerCase() === wanted);
 }
 
-export function repoLabel(issue: LinearIssue, prefix: string): string | undefined {
+/**
+ * The repo a label names, in either spelling Linear allows.
+ *
+ * A label GROUP is the native way and the one a person reaches for: the group
+ * is called "repo" and its children are repo names. The API reports such a
+ * child as `{name: "myapp", parent: {name: "repo"}}` — the group appears
+ * NOWHERE in the child's own name, so prefix-matching the name can never see
+ * it. The flat `repo:myapp` spelling stays supported for workspaces without
+ * label groups.
+ */
+export function repoLabel(issue: LinearIssue, cfg: Config["linear"]): string | undefined {
+  const labels = issue.labels?.nodes ?? [];
+  const group = cfg.repoLabelGroup.trim().toLowerCase();
+  if (group.length > 0) {
+    const child = labels.find((l) => l.parent?.name.trim().toLowerCase() === group);
+    if (child) return child.name.trim();
+  }
+  const prefix = cfg.repoLabelPrefix;
   if (prefix.length === 0) return undefined;
-  const hit = (issue.labels?.nodes ?? []).find(
-    (l) => l.name.toLowerCase().startsWith(prefix.toLowerCase()),
-  );
+  const hit = labels.find((l) => l.name.toLowerCase().startsWith(prefix.toLowerCase()));
   return hit?.name.slice(prefix.length).trim();
+}
+
+/** How the repo label would be written, for a skip reason a human can act on. */
+function labelAxis(cfg: Config["linear"]): string {
+  return cfg.repoLabelGroup ? `${cfg.repoLabelGroup}/…` : cfg.repoLabelPrefix;
 }
 
 export function resolveRepo(
@@ -67,12 +87,12 @@ export function resolveRepo(
   cfg: Config["linear"],
   knownRepos: string[],
 ): RepoMatch | null {
-  const labelled = repoLabel(issue, cfg.repoLabelPrefix);
+  const labelled = repoLabel(issue, cfg);
   if (labelled) {
     const repo = byName(labelled, cfg.repos, knownRepos);
-    // A `repo:` label that resolves to nothing is a typo worth reporting, not
-    // a reason to quietly fall through to the team's default repo.
-    return repo ? { repo, via: `label ${cfg.repoLabelPrefix}${labelled}` } : null;
+    // A repo label that resolves to nothing is a typo worth reporting, not a
+    // reason to quietly fall through to the team's default repo.
+    return repo ? { repo, via: `label ${labelled}` } : null;
   }
   // A project that maps to nothing DOES fall through, unlike the label above:
   // a `repo:` label is an instruction naming a repo, and ignoring it would be
@@ -144,15 +164,11 @@ export function planImport(
     }
     const match = resolveRepo(issue, cfg, knownRepos);
     if (!match) {
-      const tried = [
-        repoLabel(issue, cfg.repoLabelPrefix),
-        issue.project?.name,
-        issue.team.key,
-      ].filter(Boolean);
+      const tried = [repoLabel(issue, cfg), issue.project?.name, issue.team.key].filter(Boolean);
       return {
         action: "skip",
         issue,
-        reason: `no repo for ${tried.join(" / ")} — add it to [linear.repos] or name a checkout to match`,
+        reason: `no repo named ${tried.join(" / ")} (${labelAxis(cfg)} label, project, team) — add it to [linear.repos] or rename to match a checkout`,
       };
     }
     // An entry in [linear.repos] can name a checkout that has since moved.

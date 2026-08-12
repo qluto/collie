@@ -62,7 +62,7 @@ describe("planImport", () => {
     expect(entries.map((e) => (e.action === "skip" ? e.reason : ""))).toEqual([
       "already imported",
       'state "In Progress" is already under way',
-      "no repo for OPS — add it to [linear.repos] or name a checkout to match",
+      "no repo named OPS (repo/… label, project, team) — add it to [linear.repos] or rename to match a checkout",
     ]);
   });
 
@@ -122,7 +122,28 @@ describe("resolveRepo", () => {
         cfg({ repos: {} }),
         known,
       ),
-    ).toEqual({ repo: "/dev/projects/collie", via: "label repo:collie" });
+    ).toEqual({ repo: "/dev/projects/collie", via: "label collie" });
+  });
+
+  // How Linear actually reports a label group, live-probed: the child's own
+  // name is the leaf and the group only appears in `parent`, so prefix-matching
+  // the name can never see it.
+  test("a label GROUP names the repo, with the group only in the parent", () => {
+    const match = resolveRepo(
+      issue({ labels: { nodes: [{ name: "collie", parent: { name: "repo" } }] } }),
+      cfg({ repos: {} }),
+      known,
+    );
+    expect(match).toEqual({ repo: "/dev/projects/collie", via: "label collie" });
+  });
+
+  test("a label that merely sits in another group is not a repo label", () => {
+    const match = resolveRepo(
+      issue({ labels: { nodes: [{ name: "collie", parent: { name: "area" } }] } }),
+      cfg({ repos: { ENG: "/repos/app" } }),
+      known,
+    );
+    expect(match!.via).toBe("team ENG");
   });
 
   test("a projectless issue still falls through to its team", () => {
