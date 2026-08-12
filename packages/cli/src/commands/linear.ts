@@ -26,7 +26,11 @@ function runStatus(): number {
   console.log(`  size:         ${cfg.size}`);
   console.log(`  start state:  ${cfg.startState || "(the team's first started state)"}`);
   console.log(`  comment back: ${cfg.comment ? "yes" : "no"}`);
-  console.log(`  repo from:    ${cfg.repoLabelPrefix ? `"${cfg.repoLabelPrefix}<name>" label, then ` : ""}project name, then team key`);
+  const spellings = [
+    cfg.repoLabelGroup ? `"${cfg.repoLabelGroup}/…" label group` : "",
+    cfg.repoLabelPrefix ? `"${cfg.repoLabelPrefix}…" label` : "",
+  ].filter(Boolean);
+  console.log(`  repo from:    ${spellings.length ? `${spellings.join(" or ")}, then ` : ""}project name, then team key`);
   const repos = Object.entries(cfg.repos);
   console.log(`  repo aliases: ${repos.length ? repos.map(([k, v]) => `${k} -> ${v}`).join("\n                ") : "(none — names are matched against [repos] roots)"}`);
   console.log(`  api key:      ${readApiKey() ? "found" : "MISSING"}`);

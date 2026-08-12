@@ -71,7 +71,7 @@ function sectionsOf(c: Config): Section[] {
             `label "${c.linear.label}" · every ${c.linear.pollIntervalMin}min · size ${c.linear.size}`,
             // Which repo an issue lands in is the question this tab gets asked,
             // so it shows the chain rather than only the overrides table.
-            `repo: ${c.linear.repoLabelPrefix ? `"${c.linear.repoLabelPrefix}…" label → ` : ""}project → team, matched against [repos] roots`,
+            `repo: ${c.linear.repoLabelGroup ? `${c.linear.repoLabelGroup}/… label → ` : ""}project → team, matched against [repos] roots`,
             Object.entries(c.linear.repos).map(([k, v]) => `${k} → ${v}`).join(" · ")
               || "(no name overrides)",
           ]
