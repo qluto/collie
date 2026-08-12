@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { listTasks } from "../src/store.ts";
-import { readLinearState, syncLinear } from "../src/linear/sync.ts";
+import { announceStart, readLinearState, syncLinear } from "../src/linear/sync.ts";
 import type { Config } from "../src/types.ts";
 
 /** createTask refuses a path that is not a checkout, so the fixture is one. */
@@ -29,7 +29,7 @@ interface Call {
  * use. It answers the three operations by name so a query the code did not
  * mean to send shows up as an unknown-op failure rather than a silent {}.
  */
-function fakeLinear(opts: { issues: unknown[]; states?: unknown[]; fail?: string }) {
+function fakeLinear(opts: { issues: any[]; states?: unknown[]; fail?: string }) {
   const calls: Call[] = [];
   const server = Bun.serve({
     port: 0,
@@ -39,6 +39,10 @@ function fakeLinear(opts: { issues: unknown[]; states?: unknown[]; fail?: string
       calls.push({ op, variables: body.variables });
       if (opts.fail) return Response.json({ errors: [{ message: opts.fail }] });
       if (op === "CollieIssues") return Response.json({ data: { issues: { nodes: opts.issues } } });
+      if (op === "CollieIssue") {
+        const hit = opts.issues.find((i: any) => i.id === body.variables.id) ?? null;
+        return Response.json({ data: { issue: hit } });
+      }
       if (op === "CollieStates") {
         return Response.json({ data: { team: { states: { nodes: opts.states ?? [] } } } });
       }
@@ -87,7 +91,10 @@ afterEach(() => {
 });
 
 describe("syncLinear", () => {
-  test("an issue becomes a queued task carrying its origin, and the issue is moved", async () => {
+  // Importing means the issue reached the QUEUE, where it may sit all evening
+  // behind presence or the quota gate. Moving it to "In Progress" then would
+  // be the board telling a lie, so a poll only ever reads.
+  test("an issue becomes a queued task carrying its origin, and Linear is not touched", async () => {
     const fake = fakeLinear({ issues: [issue()], states: STATES });
     try {
       const res = await syncLinear(config(), { force: true });
@@ -104,10 +111,7 @@ describe("syncLinear", () => {
       });
       expect(task!.prompt).toContain("Linear ENG-42");
 
-      const ops = fake.calls.map((c) => c.op);
-      expect(ops).toContain("CollieStart");
-      expect(ops).toContain("CollieComment");
-      expect(fake.calls.find((c) => c.op === "CollieStart")!.variables.stateId).toBe("st_prog");
+      expect(fake.calls.map((c) => c.op)).toEqual(["CollieIssues"]);
     } finally {
       fake.stop();
     }
@@ -188,20 +192,6 @@ describe("syncLinear", () => {
     }
   });
 
-  // A task that exists is worth more than a tidy board: the write-back is
-  // best-effort and its failure must not cost the import or the dedup record.
-  test("a write-back failure keeps the task and reports a warning", async () => {
-    const fake = fakeLinear({ issues: [issue()], states: [] }); // no started state to move to
-    try {
-      const res = await syncLinear(config(), { force: true });
-      expect(res.created).toHaveLength(1);
-      expect(res.warnings.join(" ")).toContain("no started state");
-      expect(readLinearState().imported["iss_1"]).toBeDefined();
-    } finally {
-      fake.stop();
-    }
-  });
-
   // An outage must not turn into a call every 30 seconds for the rest of the
   // night, so the clock advances even though the poll failed.
   test("an API error throws but still spends the poll interval", async () => {
@@ -209,6 +199,70 @@ describe("syncLinear", () => {
     try {
       await expect(syncLinear(config(), { force: true })).rejects.toThrow(/authentication failed/);
       expect(readLinearState().lastSyncAt).toBeGreaterThan(0);
+    } finally {
+      fake.stop();
+    }
+  });
+});
+
+const ORIGIN = { kind: "linear", id: "iss_1", ref: "ENG-42", url: "u" } as const;
+
+describe("announceStart", () => {
+  // The state moves when work actually begins, not when it was collected — and
+  // the issue is re-READ first, because the import snapshot is hours old by
+  // then and someone may have moved it in the meantime.
+  test("moves the issue and comments, from a fresh read", async () => {
+    const fake = fakeLinear({ issues: [issue()], states: STATES });
+    try {
+      expect(await announceStart(config().linear, ORIGIN, "t-1", "collie/t-1")).toEqual([]);
+      const ops = fake.calls.map((c) => c.op);
+      expect(ops).toEqual(["CollieIssue", "CollieStates", "CollieStart", "CollieComment"]);
+      expect(fake.calls.find((c) => c.op === "CollieStart")!.variables.stateId).toBe("st_prog");
+      expect(fake.calls.find((c) => c.op === "CollieComment")!.variables.body)
+        .toBe("Started by collie as `t-1` on `collie/t-1`.");
+    } finally {
+      fake.stop();
+    }
+  });
+
+  // The session is already up by the time this runs: a tidy board is never
+  // worth unmaking it, so every failure is a warning and none is a throw.
+  test("no started state on the team is a warning, not a failure", async () => {
+    const fake = fakeLinear({ issues: [issue()], states: [] });
+    try {
+      const warnings = await announceStart(config().linear, ORIGIN, "t-1");
+      expect(warnings.join(" ")).toContain("no started state");
+    } finally {
+      fake.stop();
+    }
+  });
+
+  test("an issue that has vanished says so instead of throwing", async () => {
+    const fake = fakeLinear({ issues: [], states: STATES });
+    try {
+      expect((await announceStart(config().linear, ORIGIN, "t-1")).join(" "))
+        .toContain("gone from Linear");
+    } finally {
+      fake.stop();
+    }
+  });
+
+  test("a task with no Linear origin, and a disabled integration, call out at all", async () => {
+    const fake = fakeLinear({ issues: [issue()], states: STATES });
+    try {
+      expect(await announceStart(config().linear, undefined, "t-1")).toEqual([]);
+      expect(await announceStart(config({ enabled: false }).linear, ORIGIN, "t-1")).toEqual([]);
+      expect(fake.calls).toEqual([]);
+    } finally {
+      fake.stop();
+    }
+  });
+
+  test("comment = false moves the state and says nothing", async () => {
+    const fake = fakeLinear({ issues: [issue()], states: STATES });
+    try {
+      await announceStart(config({ comment: false }).linear, ORIGIN, "t-1");
+      expect(fake.calls.map((c) => c.op)).not.toContain("CollieComment");
     } finally {
       fake.stop();
     }

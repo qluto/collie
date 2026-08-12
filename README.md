@@ -180,9 +180,14 @@ skip    OPS-7   no repo mapped for team OPS
 1 would be imported, 2 skipped (dry run: nothing written)
 ```
 
-二重回収は2重に防いでいます: ローカルの台帳（`linear.json`、書き戻しより先に記録）と、
-Linear 側の状態そのもの（取り込み時に started へ動かし、started の issue は回収対象外）。
-書き戻しは best-effort で、失敗してもタスクは残り警告だけが出ます。Linear の優先度は
+**Linear の状態は「取り込み時」ではなく「実行開始時」に動きます。** 取り込みは
+キューに入っただけで、presence・WIP・クォータ次第では一晩動かないこともあるため、
+その間 In Progress になっているのは盤面の嘘になるからです。ディスパッチャが
+`running` に遷移した直後に、issue を読み直した上で状態を移し、タスクIDと
+ブランチ名をコメントします（best-effort。失敗してもセッションは走り続け、警告だけ出ます）。
+
+二重回収は2重に防いでいます: ローカルの台帳（`linear.json`）と、Linear 側の状態
+そのもの（実行済みの issue は started になり、started は回収対象外）。Linear の優先度は
 キュー順に反映されます（Urgent が先頭、未設定は Normal 扱い）。`collie linear status`
 で設定・キー・回収済み一覧を確認できます。
 

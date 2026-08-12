@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { HerdrError, getTask, headCommit, transition, updateTask } from "@collie/core";
+import { HerdrError, announceStart, getTask, headCommit, transition, updateTask } from "@collie/core";
 import type { Task } from "@collie/core";
 import { log, trackPane, untrackPane, type DispatcherCtx } from "./ctx.ts";
 import { pointerPrompt, settingsPath, writeRunArtifacts } from "./artifacts.ts";
@@ -355,6 +355,18 @@ export async function dispatchTask(ctx: DispatcherCtx, task: Task): Promise<void
   );
   await reportStatus(ctx, task.id, paneId, `collie ▶ ${task.title}`);
   log(ctx, `task ${task.id} running in pane ${paneId}`);
+
+  // Everything a task's origin is owed once it is actually running — and no
+  // earlier, since a queued task may sit all evening behind presence or the
+  // quota gate. After the transition, and behind its own catch: the session is
+  // up, and a third-party API must not be able to unmake that.
+  try {
+    for (const w of await announceStart(ctx.config.linear, task.origin, task.id, task.branch)) {
+      log(ctx, `linear: ${w}`);
+    }
+  } catch (err) {
+    log(ctx, `linear: announce failed for ${task.id} (${(err as Error).message})`);
+  }
 }
 
 /**

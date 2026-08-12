@@ -215,10 +215,19 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
   `state "In Progress" is already under way`). An issue labelled for collie
   that quietly never becomes a task is the failure someone burns an evening on,
   and `collie linear sync --dry-run` is the whole plan without writing anything.
+- **Linear is told nothing at import time.** Importing only means the issue
+  reached the QUEUE, where it may sit all evening behind presence, WIP or the
+  quota gate; an issue in "In Progress" while nothing runs is the board telling
+  a lie. `announceStart` fires from the dispatcher AFTER the transition to
+  running, re-READING the issue first (the import snapshot is hours old and
+  someone may have moved it). It is best-effort behind its own catch: the
+  session is already up and a third-party API must never be able to unmake it.
 - Two lines of dedup, in this order: the ledger (`linear.json`, issue id ->
-  task id, written BEFORE the write-back so a crash mid-round-trip cannot
-  duplicate) and, behind it, Linear's own board — collie moves an imported
-  issue into a `started` state, and started states are not import candidates.
+  task id, written per task so a crash cannot duplicate) and, behind it,
+  Linear's own board — a task that has RUN left its issue in a `started` state,
+  and started states are not import candidates. Between import and dispatch
+  only the ledger and the working set's `origin` cover the issue, which is
+  exactly the window in which the task still exists to be found.
   The task's `origin` field is the record the ledger caches; a lost ledger is
   re-derived from the working set and costs at worst a re-import of issues
   Linear also still calls unstarted.

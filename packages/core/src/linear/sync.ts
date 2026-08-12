@@ -2,9 +2,10 @@ import * as fs from "node:fs";
 import { ensureDataDirs, linearStatePath } from "../paths.ts";
 import { discoverRepos, repoProblem } from "../repos.ts";
 import { createTask, listTasks } from "../store.ts";
-import type { Config } from "../types.ts";
+import type { Config, TaskOrigin } from "../types.ts";
 import {
-  LinearError, commentOnIssue, fetchLabeledIssues, fetchWorkflowStates, moveIssueToState, readApiKey,
+  LinearError, commentOnIssue, fetchIssue, fetchLabeledIssues, fetchWorkflowStates, moveIssueToState,
+  readApiKey,
 } from "./api.ts";
 import type { LinearIssue } from "./api.ts";
 import { pickStartState, planImport, type PlanEntry } from "./plan.ts";
@@ -51,37 +52,61 @@ export interface SyncResult {
 const idle = (skipped: string): SyncResult => ({ skipped, entries: [], created: [], warnings: [] });
 
 /**
- * Move the issue out of the backlog and say where it went. Best-effort by
- * design: the task already exists locally, so a failure here must not undo it
- * or stop the next issue — it becomes a warning and the local ledger, which
- * has already recorded the import, is what keeps it from being imported twice.
+ * Tell Linear that work on this issue has actually STARTED.
+ *
+ * Deliberately not at import time. Importing only means the issue reached
+ * collie's queue, where it may sit all evening behind presence, the WIP limit
+ * or the quota gate — an issue sitting in "In Progress" for hours while
+ * nothing is running is the board telling a lie. This fires from the
+ * dispatcher, right after the task transitions to running.
+ *
+ * Best-effort by construction: the session is already up, so nothing here may
+ * undo it or throw into the dispatch path. Failures come back as warnings.
+ * The issue's state is re-READ rather than remembered — the import snapshot is
+ * hours old by now and someone may have moved it in the meantime.
  */
-async function writeBack(
-  key: string,
+export async function announceStart(
   cfg: Config["linear"],
-  issue: LinearIssue,
+  origin: TaskOrigin | undefined,
   taskId: string,
-  warnings: string[],
-): Promise<void> {
+  branch?: string,
+): Promise<string[]> {
+  if (!cfg.enabled || origin?.kind !== "linear") return [];
+  const key = readApiKey();
+  if (!key) return [`${origin.ref}: started, but there is no API key to say so`];
+
+  const warnings: string[] = [];
+  let issue: LinearIssue | null = null;
+  try {
+    issue = await fetchIssue(key, origin.id);
+  } catch (err) {
+    return [`${origin.ref}: could not read the issue (${(err as Error).message})`];
+  }
+  if (!issue) return [`${origin.ref}: issue is gone from Linear`];
+
   try {
     const states = await fetchWorkflowStates(key, issue.team.id);
     const target = pickStartState(states, cfg.startState);
     if (!target) {
       warnings.push(
-        `${issue.identifier}: no ${cfg.startState || "started"} state on team ${issue.team.key}; left as is`,
+        `${origin.ref}: no ${cfg.startState || "started"} state on team ${issue.team.key}; left as is`,
       );
     } else if (target.id !== issue.state.id) {
       await moveIssueToState(key, issue.id, target.id);
     }
   } catch (err) {
-    warnings.push(`${issue.identifier}: could not move state (${(err as Error).message})`);
+    warnings.push(`${origin.ref}: could not move state (${(err as Error).message})`);
   }
-  if (!cfg.comment) return;
-  try {
-    await commentOnIssue(key, issue.id, `Picked up by collie as \`${taskId}\`.`);
-  } catch (err) {
-    warnings.push(`${issue.identifier}: could not comment (${(err as Error).message})`);
+
+  if (cfg.comment) {
+    const where = branch ? ` on \`${branch}\`` : "";
+    try {
+      await commentOnIssue(key, issue.id, `Started by collie as \`${taskId}\`${where}.`);
+    } catch (err) {
+      warnings.push(`${origin.ref}: could not comment (${(err as Error).message})`);
+    }
   }
+  return warnings;
 }
 
 /**
@@ -159,11 +184,13 @@ export async function syncLinear(
       continue;
     }
     created.push(taskId);
-    // Ledger first, write-back second: the local record is what prevents a
-    // duplicate, and it must survive a crash in the middle of the round trip.
+    // The ledger is written per task rather than once at the end: it is the
+    // only thing standing between a crash here and a duplicate import, and
+    // (now that Linear is told nothing until the task actually starts) it is
+    // also the only guard covering the queued window, together with the
+    // origin scan above.
     state.imported[issue.id] = { taskId, ref: issue.identifier, at: new Date(now).toISOString() };
     writeLinearState({ ...state, lastSyncAt: now });
-    await writeBack(key, linear, issue, taskId, warnings);
   }
 
   if (!opts?.dryRun) writeLinearState({ ...state, lastSyncAt: now });

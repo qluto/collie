@@ -136,6 +136,25 @@ export async function fetchLabeledIssues(
   return data.issues?.nodes ?? [];
 }
 
+const ISSUE_QUERY = `
+query CollieIssue($id: String!) {
+  issue(id: $id) {
+    id identifier url
+    team { id key }
+    state { id name type }
+  }
+}`;
+
+/**
+ * One issue, fresh. The import snapshot is minutes to hours stale by the time
+ * a task actually starts — someone may have moved the issue in between — so
+ * the state to compare against has to be read again, not remembered.
+ */
+export async function fetchIssue(key: string, id: string): Promise<LinearIssue | null> {
+  const data = await graphql<{ issue?: LinearIssue | null }>(key, ISSUE_QUERY, { id });
+  return data.issue ?? null;
+}
+
 const STATES_QUERY = `
 query CollieStates($teamId: String!) {
   team(id: $teamId) { states(first: 50) { nodes { id name type position } } }
