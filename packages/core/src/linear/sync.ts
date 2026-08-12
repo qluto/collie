@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import { ensureDataDirs, linearStatePath } from "../paths.ts";
+import { discoverRepos } from "../repos.ts";
 import { createTask, listTasks } from "../store.ts";
 import type { Config } from "../types.ts";
 import {
@@ -122,7 +123,16 @@ export async function syncLinear(
     if (t.origin?.kind === "linear") seen.add(t.origin.id);
   }
 
-  const entries = planImport(issues, linear, seen);
+  // The checkouts collie already knows about, from the same roots the new-task
+  // picker uses: a Linear project named like its repo needs no mapping at all.
+  let known: string[] = [];
+  try {
+    known = discoverRepos(cfg.repos.roots);
+  } catch {
+    // unreadable roots only cost the name-matching rung; [linear.repos] still works
+  }
+
+  const entries = planImport(issues, linear, seen, known);
   const created: string[] = [];
   const warnings: string[] = [];
 

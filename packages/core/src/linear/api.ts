@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
  */
 export interface LinearIssue {
   id: string;
-  /** "ENG-42" — the team key prefix is what maps to a repo */
+  /** "ENG-42" */
   identifier: string;
   title: string;
   description?: string | null;
@@ -16,6 +16,10 @@ export interface LinearIssue {
   priority?: number;
   team: { id: string; key: string };
   state: { id: string; name: string; type: string };
+  /** null on an issue that belongs to no project */
+  project?: { name: string } | null;
+  /** every label, not just the marker: one of them may name the repo */
+  labels?: { nodes?: Array<{ name: string }> };
 }
 
 export interface LinearWorkflowState {
@@ -111,6 +115,8 @@ query CollieIssues($label: String!, $first: Int!) {
       id identifier title description url priority
       team { id key }
       state { id name type }
+      project { name }
+      labels { nodes { name } }
     }
   }
 }`;

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import {
-  isUnstarted, issuePrompt, pickStartState, planImport, queuePriority,
+  isUnstarted, issuePrompt, pickStartState, planImport, queuePriority, resolveRepo,
 } from "../src/linear/plan.ts";
 import type { LinearIssue, LinearWorkflowState } from "../src/linear/api.ts";
 import type { Config } from "../src/types.ts";
@@ -62,7 +62,7 @@ describe("planImport", () => {
     expect(entries.map((e) => (e.action === "skip" ? e.reason : ""))).toEqual([
       "already imported",
       'state "In Progress" is already under way',
-      "no repo mapped for team OPS",
+      "no repo for OPS — add it to [linear.repos] or name a checkout to match",
     ]);
   });
 
@@ -86,6 +86,89 @@ describe("planImport", () => {
     expect(issuePrompt(issue({ description: null }))).toBe(
       "Linear ENG-42: https://linear.app/acme/issue/ENG-42\n",
     );
+  });
+});
+
+describe("resolveRepo", () => {
+  // One Linear workspace is not one repo, and often one TEAM is not either:
+  // a single board can cover everything a person works on.
+  const known = ["/dev/projects/collie", "/dev/projects/forge-neo-mobile"];
+
+  test("a project named like its checkout needs no configuration at all", () => {
+    const match = resolveRepo(
+      issue({ project: { name: "forge-neo-mobile" } }),
+      cfg({ repos: {} }),
+      known,
+    );
+    expect(match).toEqual({ repo: "/dev/projects/forge-neo-mobile", via: "project forge-neo-mobile" });
+  });
+
+  test("the table is for when the two names disagree", () => {
+    const match = resolveRepo(
+      issue({ project: { name: "Mobile app" } }),
+      cfg({ repos: { "Mobile app": "/dev/projects/forge-neo-mobile" } }),
+      known,
+    );
+    expect(match!.repo).toBe("/dev/projects/forge-neo-mobile");
+  });
+
+  test("a repo: label beats the project, which beats the team", () => {
+    const base = { project: { name: "forge-neo-mobile" } };
+    expect(resolveRepo(issue(base), cfg({ repos: { ENG: "/dev/projects/collie" } }), known)!.via)
+      .toBe("project forge-neo-mobile");
+    expect(
+      resolveRepo(
+        issue({ ...base, labels: { nodes: [{ name: "collie" }, { name: "repo:collie" }] } }),
+        cfg({ repos: {} }),
+        known,
+      ),
+    ).toEqual({ repo: "/dev/projects/collie", via: "label repo:collie" });
+  });
+
+  test("a projectless issue still falls through to its team", () => {
+    expect(resolveRepo(issue({ project: null }), cfg({ repos: { ENG: "/repos/app" } }), []))
+      .toEqual({ repo: "/repos/app", via: "team ENG" });
+  });
+
+  // A typo in a label must not quietly ship the work to the team's default
+  // repo — that is a wrong answer wearing a right answer's clothes.
+  test("a repo: label that resolves to nothing stops the chain", () => {
+    expect(
+      resolveRepo(
+        issue({ labels: { nodes: [{ name: "repo:typo" }] } }),
+        cfg({ repos: { ENG: "/repos/app" } }),
+        known,
+      ),
+    ).toBeNull();
+  });
+
+  // The asymmetry with the label case, pinned: a project is how the board is
+  // organised, so an unmapped one falls through to the team's "everything else
+  // goes here". A team entry is opt-in, and `via` keeps the fallback visible.
+  test("an unmapped project falls through to the team, and says so", () => {
+    const match = resolveRepo(
+      issue({ project: { name: "Unknown Thing" } }),
+      cfg({ repos: { ENG: "/repos/app" } }),
+      known,
+    );
+    expect(match).toEqual({ repo: "/repos/app", via: "team ENG" });
+    // …and with no team entry it is a reported skip, not a guess
+    expect(resolveRepo(issue({ project: { name: "Unknown Thing" } }), cfg({ repos: {} }), known))
+      .toBeNull();
+  });
+
+  test("an empty prefix turns the per-issue override off entirely", () => {
+    const match = resolveRepo(
+      issue({ labels: { nodes: [{ name: "repo:collie" }] } }),
+      cfg({ repos: { ENG: "/repos/app" }, repoLabelPrefix: "" }),
+      known,
+    );
+    expect(match!.via).toBe("team ENG");
+  });
+
+  test("names match case-insensitively, on the directory name only", () => {
+    expect(resolveRepo(issue({ project: { name: "COLLIE" } }), cfg({ repos: {} }), known)!.repo)
+      .toBe("/dev/projects/collie");
   });
 });
 

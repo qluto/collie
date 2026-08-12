@@ -199,8 +199,14 @@ export interface Config {
      * polled in minutes, not on the 30s dispatch tick.
      */
     pollIntervalMin: number;
-    /** Linear team key (the issue-number prefix) -> local repo path */
+    /**
+     * Explicit name -> repo path. A key may be a project name or a team key;
+     * projects are consulted first. Only needed when the Linear name and the
+     * checkout's directory name disagree — see resolveRepo.
+     */
     repos: Record<string, string>;
+    /** issue-label prefix that names a repo per issue ("repo:"); "" disables */
+    repoLabelPrefix: string;
     /** size every imported task gets; Linear estimates are workspace-specific */
     size: TaskSize;
     /** workflow state to move an imported issue into; "" = the team's first started one */

@@ -26,8 +26,9 @@ function runStatus(): number {
   console.log(`  size:         ${cfg.size}`);
   console.log(`  start state:  ${cfg.startState || "(the team's first started state)"}`);
   console.log(`  comment back: ${cfg.comment ? "yes" : "no"}`);
+  console.log(`  repo from:    ${cfg.repoLabelPrefix ? `"${cfg.repoLabelPrefix}<name>" label, then ` : ""}project name, then team key`);
   const repos = Object.entries(cfg.repos);
-  console.log(`  repos:        ${repos.length ? repos.map(([k, v]) => `${k} -> ${v}`).join("\n                ") : "(none — every issue would be skipped)"}`);
+  console.log(`  repo aliases: ${repos.length ? repos.map(([k, v]) => `${k} -> ${v}`).join("\n                ") : "(none — names are matched against [repos] roots)"}`);
   console.log(`  api key:      ${readApiKey() ? "found" : "MISSING"}`);
   console.log(`  last poll:    ${state.lastSyncAt ? new Date(state.lastSyncAt).toLocaleString() : "never"}`);
   console.log(`  imported:     ${imported.length}`);
@@ -61,7 +62,9 @@ async function runSync(argv: string[]): Promise<number> {
   // quietly never became a task is the failure worth an evening.
   for (const e of res.entries) {
     if (e.action === "import") {
-      console.log(`${dryRun ? "would import" : "import"}  ${e.issue.identifier}  ${e.title}  -> ${e.repo}`);
+      console.log(
+        `${dryRun ? "would import" : "import"}  ${e.issue.identifier}  ${e.title}  -> ${e.repo}  (via ${e.via})`,
+      );
     } else {
       console.log(`skip    ${e.issue.identifier}  ${e.reason}`);
     }

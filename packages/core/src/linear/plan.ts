@@ -24,10 +24,76 @@ export function isUnstarted(state: { type: string }): boolean {
   return state.type === "backlog" || state.type === "unstarted" || state.type === "triage";
 }
 
+/**
+ * Which local repo an issue is about, and how we knew.
+ *
+ * One Linear workspace is not one repo, and often one TEAM is not either — a
+ * single team's board can cover everything a person works on. So the answer is
+ * a chain, most specific first, and every step accepts either an explicit
+ * `[linear.repos]` entry or a plain name match against the repos collie was
+ * already told about in `[repos] roots` for the new-task picker. A project
+ * called "forge-neo-mobile" next to a checkout called "forge-neo-mobile"
+ * therefore needs no configuration at all; the table is for when the two names
+ * disagree.
+ *
+ *   1. a `repo:<name>` label on the issue   — the per-issue escape hatch
+ *   2. the issue's project name             — the usual axis inside one team
+ *   3. the team key                         — the whole-team default
+ */
+export interface RepoMatch {
+  repo: string;
+  /** what answered, for the sync output — a silent guess is worse than none */
+  via: string;
+}
+
+function byName(name: string, table: Record<string, string>, known: string[]): string | undefined {
+  const explicit = table[name];
+  if (explicit) return explicit;
+  const wanted = name.trim().toLowerCase();
+  if (wanted.length === 0) return undefined;
+  return known.find((repo) => (repo.split("/").at(-1) ?? "").toLowerCase() === wanted);
+}
+
+export function repoLabel(issue: LinearIssue, prefix: string): string | undefined {
+  if (prefix.length === 0) return undefined;
+  const hit = (issue.labels?.nodes ?? []).find(
+    (l) => l.name.toLowerCase().startsWith(prefix.toLowerCase()),
+  );
+  return hit?.name.slice(prefix.length).trim();
+}
+
+export function resolveRepo(
+  issue: LinearIssue,
+  cfg: Config["linear"],
+  knownRepos: string[],
+): RepoMatch | null {
+  const labelled = repoLabel(issue, cfg.repoLabelPrefix);
+  if (labelled) {
+    const repo = byName(labelled, cfg.repos, knownRepos);
+    // A `repo:` label that resolves to nothing is a typo worth reporting, not
+    // a reason to quietly fall through to the team's default repo.
+    return repo ? { repo, via: `label ${cfg.repoLabelPrefix}${labelled}` } : null;
+  }
+  // A project that maps to nothing DOES fall through, unlike the label above:
+  // a `repo:` label is an instruction naming a repo, and ignoring it would be
+  // wrong, while a project is just how the board is organised. A team entry is
+  // therefore what it looks like — "everything else goes here" — and `via`
+  // reports which rung answered so the fallback is never invisible.
+  const project = issue.project?.name;
+  if (project) {
+    const repo = byName(project, cfg.repos, knownRepos);
+    if (repo) return { repo, via: `project ${project}` };
+  }
+  const team = byName(issue.team.key, cfg.repos, knownRepos);
+  return team ? { repo: team, via: `team ${issue.team.key}` } : null;
+}
+
 export interface ImportEntry {
   action: "import";
   issue: LinearIssue;
   repo: string;
+  /** which rung of the chain answered */
+  via: string;
   title: string;
   prompt: string;
   priority: number;
@@ -65,6 +131,7 @@ export function planImport(
   issues: LinearIssue[],
   cfg: Config["linear"],
   imported: ReadonlySet<string>,
+  knownRepos: string[] = [],
 ): PlanEntry[] {
   return issues.map((issue): PlanEntry => {
     if (imported.has(issue.id)) {
@@ -73,14 +140,24 @@ export function planImport(
     if (!isUnstarted(issue.state)) {
       return { action: "skip", issue, reason: `state "${issue.state.name}" is already under way` };
     }
-    const repo = cfg.repos[issue.team.key];
-    if (!repo) {
-      return { action: "skip", issue, reason: `no repo mapped for team ${issue.team.key}` };
+    const match = resolveRepo(issue, cfg, knownRepos);
+    if (!match) {
+      const tried = [
+        repoLabel(issue, cfg.repoLabelPrefix),
+        issue.project?.name,
+        issue.team.key,
+      ].filter(Boolean);
+      return {
+        action: "skip",
+        issue,
+        reason: `no repo for ${tried.join(" / ")} — add it to [linear.repos] or name a checkout to match`,
+      };
     }
     return {
       action: "import",
       issue,
-      repo,
+      repo: match.repo,
+      via: match.via,
       title: issue.title.trim() || issue.identifier,
       prompt: issuePrompt(issue),
       priority: queuePriority(issue.priority),

@@ -192,7 +192,18 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
   pin, so nothing that *decides* anything is allowed to live behind it. Only
   `completedAt`/`canceledAt` are filtered server-side; "is this state already
   under way" is decided client-side, where it is tested.
-- **A skipped issue always says why** (`no repo mapped for team OPS`,
+- **Which repo an issue is about is a CHAIN, not a mapping**: a `repo:<name>`
+  label, then the project name, then the team key — and at each rung the name
+  is looked up in `[linear.repos]` first, then matched by directory name
+  against the checkouts under `[repos] roots` (the list collie already has for
+  the new-task picker). A Linear project named like its repo needs no config at
+  all. One workspace is not one repo and often one TEAM is not either, which is
+  what a flat team->repo table got wrong. Two deliberate asymmetries: a `repo:`
+  label that resolves to nothing STOPS the chain (it is an instruction naming a
+  repo; falling through would ship the work somewhere else), while an unmapped
+  project falls through to the team (it is only how the board is organised).
+  Every import reports `via <rung>` so a fallback is never invisible.
+- **A skipped issue always says why** (`no repo for OPS — add it to …`,
   `state "In Progress" is already under way`). An issue labelled for collie
   that quietly never becomes a task is the failure someone burns an evening on,
   and `collie linear sync --dry-run` is the whole plan without writing anything.

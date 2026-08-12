@@ -86,9 +86,9 @@ worktree = true
 worktree_root = "~/dev/worktrees"
 
 [linear]
-# Auto-collect Linear issues carrying \`label\` as collie tasks. Off by default,
-# and it stays off until a team below maps to a local repo — an issue with
-# nowhere to run is skipped, never guessed at.
+# Auto-collect Linear issues carrying \`label\` as collie tasks. Off by default.
+# An issue whose repo cannot be worked out is skipped with the reason printed,
+# never guessed at — see [linear.repos] below for how that is decided.
 #
 # The API key is NOT read from this file (the TUI shows this file in full):
 #   security add-generic-password -s "collie-linear" -a "$USER" -w "lin_api_..."
@@ -98,10 +98,19 @@ poll_interval_min = 5        # someone else's API: minutes, not the 30s tick
 size = "M"                   # imported tasks all get this size
 start_state = ""             # move the issue here on import; "" = the team's first started state
 comment = true               # comment the collie task id back onto the issue
+repo_label_prefix = "repo:"  # per-issue override, e.g. a "repo:collie" label; "" disables
 
 [linear.repos]
-# Linear team key (the issue-number prefix) -> local repo.
-# "ENG" = "~/dev/projects/myapp"
+# WHICH REPO an issue is about is answered most-specific-first:
+#   1. a "repo:<name>" label on the issue
+#   2. the issue's project name
+#   3. its team key
+# At each step the name is looked up here first, then matched against the
+# checkouts under [repos] roots by directory name — so a Linear project called
+# "myapp" next to ~/dev/projects/myapp needs no entry at all. Add one only when
+# the two names disagree:
+# "Mobile app" = "~/dev/projects/myapp"
+# "ENG"        = "~/dev/projects/monorepo"
 `;
 
 export const DEFAULT_CONFIG: Config = {
@@ -156,6 +165,7 @@ export const DEFAULT_CONFIG: Config = {
     label: "collie",
     pollIntervalMin: 5,
     repos: {},
+    repoLabelPrefix: "repo:",
     size: "M",
     startState: "",
     comment: true,
@@ -327,6 +337,10 @@ export function parseConfig(toml: string): Config {
           out[team] = expandTilde(str(repo, `linear.repos.${team}`));
         }
         return out;
+      }),
+      repoLabelPrefix: pick("linear.repo_label_prefix", d.linear.repoLabelPrefix, (v) => {
+        if (typeof v !== "string") fail("linear.repo_label_prefix must be a string");
+        return v; // "" is meaningful: no per-issue override
       }),
       size: pick("linear.size", d.linear.size, (v) => oneOf(v, "linear.size", SIZES)),
       // Empty is meaningful (let the team's own workflow decide), so this one

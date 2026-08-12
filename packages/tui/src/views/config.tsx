@@ -69,10 +69,11 @@ function sectionsOf(c: Config): Section[] {
       lines: c.linear.enabled
         ? [
             `label "${c.linear.label}" · every ${c.linear.pollIntervalMin}min · size ${c.linear.size}`,
-            // The mapping is the gate: a team missing here is an issue that is
-            // labelled, polled, and then silently skipped.
+            // Which repo an issue lands in is the question this tab gets asked,
+            // so it shows the chain rather than only the overrides table.
+            `repo: ${c.linear.repoLabelPrefix ? `"${c.linear.repoLabelPrefix}…" label → ` : ""}project → team, matched against [repos] roots`,
             Object.entries(c.linear.repos).map(([k, v]) => `${k} → ${v}`).join(" · ")
-              || "(no team → repo mapping — every issue would be skipped)",
+              || "(no name overrides)",
           ]
         : ["off · collie only runs what you toss in"],
     },
