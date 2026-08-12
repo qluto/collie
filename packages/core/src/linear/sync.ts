@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import { ensureDataDirs, linearStatePath } from "../paths.ts";
-import { discoverRepos } from "../repos.ts";
+import { discoverRepos, repoProblem } from "../repos.ts";
 import { createTask, listTasks } from "../store.ts";
 import type { Config } from "../types.ts";
 import {
@@ -132,7 +132,7 @@ export async function syncLinear(
     // unreadable roots only cost the name-matching rung; [linear.repos] still works
   }
 
-  const entries = planImport(issues, linear, seen, known);
+  const entries = planImport(issues, linear, seen, known, repoProblem);
   const created: string[] = [];
   const warnings: string[] = [];
 

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Box, Text, useInput } from "ink";
+import { repoProblem } from "@collie/core";
 import type { TaskSize } from "@collie/core";
 import { JpTextInput } from "../jpTextInput.tsx";
 
@@ -29,6 +30,8 @@ const SIZES: TaskSize[] = ["S", "M", "L"];
 export function NewTaskForm(props: {
   /** discovered from config repos.roots + repos of recent tasks */
   knownRepos: string[];
+  /** injectable so the view can be rendered without touching a filesystem */
+  checkRepo?: (repo: string) => string | null;
   onSubmit: (draft: NewTaskDraft) => void;
   onCancel: () => void;
 }): React.JSX.Element {
@@ -49,9 +52,21 @@ export function NewTaskForm(props: {
     return hits.slice(0, MAX_VISIBLE_CANDIDATES);
   }, [repo, props.knownRepos]);
 
+  // What Enter would take: the highlighted candidate, or whatever was typed.
+  const chosen = repoSel >= 0 && candidates[repoSel] ? candidates[repoSel]! : repo.trim();
+  const freeText = !(repoSel >= 0 && candidates[repoSel]);
+
+  // Checked HERE, at the first field, rather than when the task is created:
+  // past this point the form asks two more questions and opens $EDITOR, and
+  // learning the path was wrong after writing a prompt — or worse, next
+  // morning, after the dispatcher choked on it at 2am — is the disappointment
+  // this whole form exists to avoid. Memoised, so it is one stat per change,
+  // not one per keystroke.
+  const check = props.checkRepo ?? repoProblem;
+  const problem = useMemo(() => (chosen ? check(chosen) : null), [chosen]);
+
   const confirmRepo = () => {
-    const chosen = repoSel >= 0 && candidates[repoSel] ? candidates[repoSel]! : repo.trim();
-    if (!chosen) return;
+    if (!chosen || problem) return; // the field simply does not let go
     setRepo(chosen);
     setStep(1);
   };
@@ -111,7 +126,11 @@ export function NewTaskForm(props: {
                 {r}
               </Text>
             ))}
-            {repoSel === -1 && repo.trim() && <Text color="yellow">free input: {repo.trim()}</Text>}
+            {problem && chosen ? (
+              <Text color="red" wrap="truncate">{`${chosen} — ${problem}`}</Text>
+            ) : freeText && chosen ? (
+              <Text color="yellow" wrap="truncate">{`free input: ${chosen}`}</Text>
+            ) : null}
             {candidates.length === 0 && !repo.trim() && (
               <Text dimColor>(no known repos — set repos.roots in config, or type a path)</Text>
             )}

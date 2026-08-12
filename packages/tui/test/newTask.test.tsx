@@ -5,6 +5,13 @@ import { NewTaskForm, type NewTaskDraft } from "../src/views/newTask.tsx";
 
 const REPOS = ["/tmp/repo-one", "/tmp/repo-two"];
 
+/**
+ * The form stats the chosen path for real; these fixtures are not checkouts.
+ * Every test but the validation one below is about the three-step flow, so
+ * they render with the check stubbed out.
+ */
+const ok = () => null;
+
 const strip = (s: string) => s.replace(/\x1b?\[[0-9;]*m/g, "");
 const lines = (frame: string) => strip(frame).split("\n");
 
@@ -22,7 +29,7 @@ async function type(stdin: { write: (s: string) => void }, ...chunks: string[]):
 async function driveToSize(
   onSubmit: (d: NewTaskDraft) => void = () => {},
 ): Promise<ReturnType<typeof render>> {
-  const app = render(<NewTaskForm knownRepos={REPOS} onSubmit={onSubmit} onCancel={() => {}} />);
+  const app = render(<NewTaskForm knownRepos={REPOS} checkRepo={ok} onSubmit={onSubmit} onCancel={() => {}} />);
   await type(app.stdin, "two", "\r", "fix the parser", "\r");
   return app;
 }
@@ -30,7 +37,7 @@ async function driveToSize(
 describe("NewTaskForm", () => {
   test("opens on the repo step", () => {
     const { lastFrame, unmount } = render(
-      <NewTaskForm knownRepos={REPOS} onSubmit={() => {}} onCancel={() => {}} />,
+      <NewTaskForm knownRepos={REPOS} checkRepo={ok} onSubmit={() => {}} onCancel={() => {}} />,
     );
     const frame = lastFrame()!;
     unmount(); // the text input parks the hardware cursor while mounted
@@ -52,8 +59,47 @@ describe("NewTaskForm", () => {
     expect(frame).toContain("h/l size · Enter creates & opens $EDITOR");
   });
 
+  // The point of checking here rather than at createTask: past this field the
+  // form asks two more questions and opens $EDITOR. Learning the path was
+  // wrong after writing a prompt — or next morning, after the dispatcher
+  // choked on it at 2am — is the disappointment the check exists to prevent.
+  test("a bad repo stops the form at the first field, with the reason", async () => {
+    const app = render(
+      <NewTaskForm
+        knownRepos={REPOS}
+        checkRepo={(r) => (r === "/tmp/repo-two" ? null : "is not a git repository")}
+        onSubmit={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    await type(app.stdin, "\x1b[A", "/nope"); // ↑ past the top = free input
+    expect(strip(app.lastFrame()!)).toContain("/nope — is not a git repository");
+
+    await type(app.stdin, "\r");
+    const frame = strip(app.lastFrame()!);
+    app.unmount();
+    expect(frame).not.toContain("title:"); // Enter did not advance
+    expect(frame).toContain("/nope — is not a git repository");
+  });
+
+  test("a good repo clears the way", async () => {
+    const app = render(
+      <NewTaskForm
+        knownRepos={REPOS}
+        checkRepo={(r) => (r === "/tmp/repo-two" ? null : "is not a git repository")}
+        onSubmit={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    await type(app.stdin, "two", "\r");
+    const frame = strip(app.lastFrame()!);
+    app.unmount();
+    expect(frame).toContain("title:");
+    expect(frame).not.toContain("is not a git repository");
+  });
+
   test("no step ever asks about worktree, permission or queueing", async () => {
-    const app = render(<NewTaskForm knownRepos={REPOS} onSubmit={() => {}} onCancel={() => {}} />);
+    const app = render(<NewTaskForm knownRepos={REPOS} checkRepo={ok} onSubmit={() => {}} onCancel={() => {}} />);
     const seen: string[] = [app.lastFrame()!];
     for (const chunk of ["two", "\r", "fix the parser", "\r"]) {
       await type(app.stdin, chunk);
@@ -104,7 +150,7 @@ describe("NewTaskForm", () => {
   test("Esc cancels", async () => {
     let cancelled = false;
     const app = render(
-      <NewTaskForm knownRepos={REPOS} onSubmit={() => {}} onCancel={() => { cancelled = true; }} />,
+      <NewTaskForm knownRepos={REPOS} checkRepo={ok} onSubmit={() => {}} onCancel={() => { cancelled = true; }} />,
     );
     await type(app.stdin, "\x1b");
     app.unmount();
@@ -120,12 +166,12 @@ describe("collie new (standalone popup form)", () => {
     const { REPO_ROW, TITLE_ROW } = await import("../src/views/newTask.tsx");
     const { Standalone } = await import("../src/new.tsx");
 
-    const repoStep = render(<Standalone knownRepos={REPOS} onDone={() => {}} />);
+    const repoStep = render(<Standalone knownRepos={REPOS} checkRepo={ok} onDone={() => {}} />);
     const repoLines = lines(repoStep.lastFrame()!);
     repoStep.unmount();
     expect(repoLines.findIndex((l) => l.includes("repo:")) + 1).toBe(REPO_ROW);
 
-    const titleStep = render(<Standalone knownRepos={REPOS} onDone={() => {}} />);
+    const titleStep = render(<Standalone knownRepos={REPOS} checkRepo={ok} onDone={() => {}} />);
     await type(titleStep.stdin, "two", "\r");
     const titleLines = lines(titleStep.lastFrame()!);
     titleStep.unmount();

@@ -2,7 +2,15 @@ import { describe, expect, test, beforeEach } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+
+/**
+ * createTask refuses a repo that is not a git checkout — the whole point is
+ * that a bad path cannot reach the queue — so these tests need a real one.
+ * Made once: nothing here is about the repo's contents.
+ */
+const REPO = fs.mkdtempSync(path.join(os.tmpdir(), "collie-test-repo-"));
+spawnSync("git", ["init", "-q"], { cwd: REPO });
 
 function freshHome(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "collie-test-"));
@@ -25,7 +33,7 @@ describe("store basics", () => {
   test("create → get round-trip preserves fields and prompt", () => {
     const t = createTask({
       title: "Test task",
-      repo: "/tmp/repo",
+      repo: REPO,
       prompt: "Do the thing.\n\nWith **markdown**.\n",
       size: "S",
       priority: 5,
@@ -43,7 +51,7 @@ describe("store basics", () => {
   });
 
   test("markDone: review -> done, running routes through review, idempotent", () => {
-    const reviewed = createTask({ title: "a", repo: "/tmp", prompt: "p" });
+    const reviewed = createTask({ title: "a", repo: REPO, prompt: "p" });
     transition(reviewed.id, "running");
     transition(reviewed.id, "review", { resultSummary: "did it" });
     expect(markDone(reviewed.id).status).toBe("done");
@@ -52,19 +60,19 @@ describe("store basics", () => {
 
     // the human at the pane knows the session is finished even if it never
     // called back: running -> review -> done in one step
-    const running = createTask({ title: "b", repo: "/tmp", prompt: "p" });
+    const running = createTask({ title: "b", repo: REPO, prompt: "p" });
     transition(running.id, "running");
     expect(markDone(running.id).status).toBe("done");
     expect(tailEvents(10, running.id).map((e) => e.to)).toEqual(["queued", "running", "review", "done"]);
   });
 
   test("markDone refuses tasks that were never dispatched", () => {
-    const queued = createTask({ title: "c", repo: "/tmp", prompt: "p" });
+    const queued = createTask({ title: "c", repo: REPO, prompt: "p" });
     expect(() => markDone(queued.id)).toThrow(/is queued/);
   });
 
   test("retryTask restores a full attempt budget", () => {
-    const t = createTask({ title: "a", repo: "/tmp", prompt: "p" });
+    const t = createTask({ title: "a", repo: REPO, prompt: "p" });
     updateTask(t.id, (task) => {
       task.attempts = task.maxAttempts;
     });
@@ -114,7 +122,7 @@ body`;
   });
 
   test("serialize/parse round-trip with run sub-object", () => {
-    const t = createTask({ title: "x", repo: "/tmp", prompt: "body" });
+    const t = createTask({ title: "x", repo: REPO, prompt: "body" });
     const started = transition(t.id, "running", { paneId: "w1:p2", sessionId: "abc" }, { source: "test" });
     const reparsed = parseTaskFile(serializeTask(started), "mem");
     expect(reparsed.run?.paneId).toBe("w1:p2");
@@ -123,7 +131,7 @@ body`;
   });
 
   test("run.question persists, and an explicit undefined patch clears it", () => {
-    const t = createTask({ title: "q", repo: "/tmp", prompt: "p" });
+    const t = createTask({ title: "q", repo: REPO, prompt: "p" });
     transition(t.id, "running", undefined, { source: "test" });
     transition(t.id, "blocked", { question: "Which migration should I run?" }, { source: "test" });
     expect(getTask(t.id)!.run?.question).toBe("Which migration should I run?");
@@ -136,9 +144,9 @@ body`;
   });
 
   test("listTasks sorts by priority then queuedAt", () => {
-    const a = createTask({ title: "a", repo: "/tmp", prompt: "p", priority: 200 });
-    const b = createTask({ title: "b", repo: "/tmp", prompt: "p", priority: 10 });
-    const c = createTask({ title: "c", repo: "/tmp", prompt: "p", priority: 10 });
+    const a = createTask({ title: "a", repo: REPO, prompt: "p", priority: 200 });
+    const b = createTask({ title: "b", repo: REPO, prompt: "p", priority: 10 });
+    const c = createTask({ title: "c", repo: REPO, prompt: "p", priority: 10 });
     // same-priority order is by queuedAt; same-ms creation makes it ambiguous,
     // so set explicit timestamps
     updateTask(b.id, (t) => {
@@ -154,7 +162,7 @@ body`;
   });
 
   test("journal records transitions", () => {
-    const t = createTask({ title: "j", repo: "/tmp", prompt: "p" });
+    const t = createTask({ title: "j", repo: REPO, prompt: "p" });
     transition(t.id, "running", undefined, { source: "test" });
     const events = tailEvents(10, t.id);
     expect(events.length).toBe(2);
@@ -167,7 +175,7 @@ body`;
 
 describe("transitions", () => {
   test("legal path queued→running→review→done", () => {
-    const t = createTask({ title: "x", repo: "/tmp", prompt: "p" });
+    const t = createTask({ title: "x", repo: REPO, prompt: "p" });
     transition(t.id, "running");
     transition(t.id, "review", { resultSummary: "did it" });
     const done = transition(t.id, "done");
@@ -177,7 +185,7 @@ describe("transitions", () => {
   });
 
   test("illegal transitions throw", () => {
-    const t = createTask({ title: "x", repo: "/tmp", prompt: "p" });
+    const t = createTask({ title: "x", repo: REPO, prompt: "p" });
     expect(() => transition(t.id, "done")).toThrow(IllegalTransitionError);
     expect(() => transition(t.id, "review")).toThrow(IllegalTransitionError);
     transition(t.id, "running");
@@ -185,7 +193,7 @@ describe("transitions", () => {
   });
 
   test("updateTask refuses status change and bumps rev", () => {
-    const t = createTask({ title: "x", repo: "/tmp", prompt: "p" });
+    const t = createTask({ title: "x", repo: REPO, prompt: "p" });
     expect(() =>
       updateTask(t.id, (task) => {
         task.status = "done";
@@ -199,10 +207,10 @@ describe("transitions", () => {
   });
 
   test("cancel semantics: a queued task is deleted, a live one is failed", () => {
-    const q = createTask({ title: "q", repo: "/tmp", prompt: "p" });
+    const q = createTask({ title: "q", repo: REPO, prompt: "p" });
     cancelTask(q.id);
     expect(getTask(q.id)).toBeNull();
-    const r = createTask({ title: "r", repo: "/tmp", prompt: "p" });
+    const r = createTask({ title: "r", repo: REPO, prompt: "p" });
     transition(r.id, "running");
     const cancelled = cancelTask(r.id);
     expect(cancelled.status).toBe("failed");
@@ -210,7 +218,7 @@ describe("transitions", () => {
   });
 
   test("deleteTask removes the file and journals it", () => {
-    const t = createTask({ title: "oops", repo: "/tmp", prompt: "p" });
+    const t = createTask({ title: "oops", repo: REPO, prompt: "p" });
     deleteTask(t.id, { source: "test" });
     expect(fs.existsSync(path.join(process.env.COLLIE_HOME!, "tasks", `${t.id}.md`))).toBe(false);
     expect(getTask(t.id)).toBeNull();
@@ -227,7 +235,7 @@ describe("archiving", () => {
   const archivedPath = (id: string) => path.join(process.env.COLLIE_HOME!, "tasks", "archive", `${id}.md`);
 
   test("done moves the task out of the working set but keeps it readable", () => {
-    const t = createTask({ title: "x", repo: "/tmp", prompt: "p" });
+    const t = createTask({ title: "x", repo: REPO, prompt: "p" });
     transition(t.id, "running");
     transition(t.id, "review", { resultSummary: "did it" });
     transition(t.id, "done");
@@ -243,7 +251,7 @@ describe("archiving", () => {
   });
 
   test("done -> review walks the task back out of the archive", () => {
-    const t = createTask({ title: "x", repo: "/tmp", prompt: "p" });
+    const t = createTask({ title: "x", repo: REPO, prompt: "p" });
     transition(t.id, "running");
     transition(t.id, "review");
     transition(t.id, "done");
@@ -258,7 +266,7 @@ describe("archiving", () => {
   });
 
   test("a half-migrated home lists the task once, from the live file", () => {
-    const t = createTask({ title: "z", repo: "/tmp", prompt: "p" });
+    const t = createTask({ title: "z", repo: REPO, prompt: "p" });
     transition(t.id, "running");
     transition(t.id, "review");
     transition(t.id, "done");
@@ -271,7 +279,7 @@ describe("archiving", () => {
   test("listArchived: newest first, bounded, and a count that ignores the bound", async () => {
     const ids: string[] = [];
     for (const title of ["first", "second", "third"]) {
-      const t = createTask({ title, repo: "/tmp", prompt: "p" });
+      const t = createTask({ title, repo: REPO, prompt: "p" });
       transition(t.id, "running");
       transition(t.id, "review", { resultSummary: `${title} summary` });
       transition(t.id, "done");
@@ -291,12 +299,12 @@ describe("archiving", () => {
   });
 
   test("listArchived on a home that has never archived anything", () => {
-    createTask({ title: "live", repo: "/tmp", prompt: "p" });
+    createTask({ title: "live", repo: REPO, prompt: "p" });
     expect(listArchived(10)).toEqual({ tasks: [], total: 0 });
   });
 
   test("markDone stays idempotent across the archive move", () => {
-    const t = createTask({ title: "y", repo: "/tmp", prompt: "p" });
+    const t = createTask({ title: "y", repo: REPO, prompt: "p" });
     transition(t.id, "running");
     expect(markDone(t.id).status).toBe("done");
     expect(markDone(t.id).status).toBe("done"); // reads the archived file
@@ -306,7 +314,7 @@ describe("archiving", () => {
 describe("concurrency", () => {
   test("two processes hammering updateTask: no lost updates, no torn files", async () => {
     const home = process.env.COLLIE_HOME!;
-    const t = createTask({ title: "hammer", repo: "/tmp", prompt: "p" });
+    const t = createTask({ title: "hammer", repo: REPO, prompt: "p" });
     const hammer = path.join(import.meta.dir, "hammer.ts");
     const N = 200;
     const run = (label: string) =>
@@ -326,4 +334,58 @@ describe("concurrency", () => {
     expect(counters?.resultSummary).toContain(`A=${N}`);
     expect(counters?.resultSummary).toContain(`B=${N}`);
   }, 60_000);
+});
+
+// The disappointment this prevents is time-shifted: a typo'd path costs
+// nothing to catch now and a whole night to catch later — the task sits queued
+// until 2am, worktree.create fails on something that was never a checkout, the
+// attempts burn, and the human finds out in the morning.
+describe("createTask repo check", () => {
+  test("a path that does not exist never becomes a task", () => {
+    expect(() => createTask({ title: "t", repo: "/nowhere/at/all", prompt: "p" }))
+      .toThrow(/does not exist/);
+    expect(listTasks()).toEqual([]);
+  });
+
+  test("a directory that is not a checkout is refused too — that is the failure at 2am", () => {
+    const plain = fs.mkdtempSync(path.join(os.tmpdir(), "collie-not-a-repo-"));
+    expect(() => createTask({ title: "t", repo: plain, prompt: "p" }))
+      .toThrow(/is not a git repository/);
+  });
+
+  test("a file is not a repo", () => {
+    const file = path.join(REPO, "afile");
+    fs.writeFileSync(file, "x");
+    expect(() => createTask({ title: "t", repo: file, prompt: "p" })).toThrow(/not a directory/);
+  });
+
+  // path.resolve("") is the process's cwd, so a blank repo used to become
+  // "wherever collie happens to be running" — which, for the dispatcher, is
+  // this checkout rather than anything the user meant.
+  test("a blank repo is refused, not resolved to the current directory", () => {
+    expect(() => createTask({ title: "t", repo: "   ", prompt: "p" })).toThrow(/repo is empty/);
+    expect(listTasks()).toEqual([]);
+  });
+
+  test("the stored path is absolute, so ~ and . are the same repo as the real one", () => {
+    const viaRelative = path.relative(process.cwd(), REPO);
+    const t = createTask({ title: "t", repo: viaRelative, prompt: "p" });
+    expect(t.repo).toBe(fs.realpathSync(REPO) === REPO ? REPO : t.repo);
+    expect(path.isAbsolute(t.repo)).toBe(true);
+  });
+
+  // A worktree checkout's .git is a FILE, and working in one is normal.
+  test("a worktree checkout is a perfectly good repo", () => {
+    const wt = path.join(os.tmpdir(), `collie-wt-${process.pid}`);
+    fs.rmSync(wt, { recursive: true, force: true });
+    spawnSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q",
+      "--allow-empty", "-m", "init"], { cwd: REPO });
+    spawnSync("git", ["worktree", "add", "-q", "-b", "wt-branch", wt], { cwd: REPO });
+    try {
+      expect(fs.statSync(path.join(wt, ".git")).isFile()).toBe(true);
+      expect(() => createTask({ title: "t", repo: wt, prompt: "p" })).not.toThrow();
+    } finally {
+      spawnSync("git", ["worktree", "remove", "--force", wt], { cwd: REPO });
+    }
+  });
 });

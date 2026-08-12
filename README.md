@@ -46,6 +46,13 @@ ghq 形式の org 階層にも対応。入力でフィルタ、↑↓で選択�
 画面で承認・質問への返答・retry）。タスクの軸は `size`（S/M/L = トークン消費の
 見積もり）と `priority`（キューの並び順のみ）の2つだけです。
 
+**repo は登録時に検証されます**: 存在する／ディレクトリである／git チェックアウトで
+ある（worktree の `.git` はファイルですが、これも有効）。`createTask` は全入口
+（CLI・TUI・popup・Linear 取り込み）の合流点なので、ここを通らないタスクはありません。
+フォームは repo 欄から**先に進めません**し、`task add` は `$EDITOR` を開く前に止まります
+— 深夜2時に `worktree.create` が失敗して attempts を使い切り、翌朝それを知る、を避ける
+ためです。Linear 取り込みでは同じ検査が理由付きの skip になります。
+
 **burn-down**: セッション予算は reset で消滅するので、`[quota.burn_down]`
 （既定 on）により reset まで `window_min` 分を切った full ウィンドウでは cap が
 `fraction`（既定 0.95）まで緩みます。ヘッダーに `⌛ burn-down` と表示されます。

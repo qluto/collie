@@ -19,6 +19,8 @@ import { ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN, editInEditor } from "./editor.ts";
  */
 export function Standalone(props: {
   knownRepos: string[];
+  /** forwarded to the form; only the row-geometry tests pass it */
+  checkRepo?: (repo: string) => string | null;
   onDone: (draft: NewTaskDraft | null) => void;
 }): React.JSX.Element {
   return (
@@ -26,6 +28,7 @@ export function Standalone(props: {
       <Text dimColor>🐑 collie — new task</Text>
       <NewTaskForm
         knownRepos={props.knownRepos}
+        checkRepo={props.checkRepo}
         onSubmit={props.onDone}
         onCancel={() => props.onDone(null)}
       />
@@ -96,9 +99,16 @@ export async function runNewTask(opts: { popup?: boolean } = {}): Promise<number
 
   // worktree / permission mode / priority come from config defaults inside
   // createTask — a toss-in never answers them
-  const task = createTask(
-    { title: draft.title, repo: draft.repo, prompt, size: draft.size },
-    { source: opts.popup ? "popup" : "cli" },
-  );
+  // The form already refused a bad repo, but it could have gone away while
+  // $EDITOR was open — and in a popup an uncaught throw is total silence.
+  let task;
+  try {
+    task = createTask(
+      { title: draft.title, repo: draft.repo, prompt, size: draft.size },
+      { source: opts.popup ? "popup" : "cli" },
+    );
+  } catch (err) {
+    return finish(1, `not created: ${(err as Error).message}`, "request");
+  }
   return finish(0, `queued ${task.id} · ${task.title}`, "done");
 }

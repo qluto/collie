@@ -132,6 +132,8 @@ export function planImport(
   cfg: Config["linear"],
   imported: ReadonlySet<string>,
   knownRepos: string[] = [],
+  /** injected so this module stays pure; sync passes core's repoProblem */
+  checkRepo: (repo: string) => string | null = () => null,
 ): PlanEntry[] {
   return issues.map((issue): PlanEntry => {
     if (imported.has(issue.id)) {
@@ -152,6 +154,13 @@ export function planImport(
         issue,
         reason: `no repo for ${tried.join(" / ")} — add it to [linear.repos] or name a checkout to match`,
       };
+    }
+    // An entry in [linear.repos] can name a checkout that has since moved.
+    // Catching it here makes it a reported skip instead of an import that
+    // fails at 2am, which is the same promise the capture form makes.
+    const unusable = checkRepo(match.repo);
+    if (unusable) {
+      return { action: "skip", issue, reason: `repo ${match.repo} ${unusable} (${match.via})` };
     }
     return {
       action: "import",

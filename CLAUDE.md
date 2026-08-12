@@ -224,6 +224,21 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
 
 ## Non-obvious invariants
 
+- **A task's repo is checked when it is CREATED, never only at dispatch**
+  (`repoProblem` in core/repos.ts: exists, is a directory, has a `.git` —
+  which may be a FILE, since a worktree checkout is a fine place to work).
+  `createTask` is the one funnel every entry point goes through — CLI, TUI,
+  popup, Linear import — so the check lives there and nothing can reach the
+  queue that the dispatcher will only choke on at 2am, after burning its
+  attempts, with the human finding out next morning. Entry points check EARLY
+  as well, and that is not redundancy but timing: the capture form refuses to
+  leave the repo field (`checkRepo`, injectable so the view renders without a
+  filesystem), and `task add` checks before `$EDITOR` — nobody should write a
+  prompt that a typo'd path was always going to throw away. Emptiness is
+  checked BEFORE `path.resolve`, which turns "" into the process's cwd; the
+  stored path is absolute so `~`, `.` and the real path are one repo to
+  everything that later groups by it. The importer turns the same check into a
+  reported `skip`, since an unattended path must never throw mid-run.
 - Two task axes, do not conflate them: `size` = token-cost estimate (feeds the
   quota math + conservative cap), `priority` = queue order ONLY (no gating
   power). `defer` no longer exists — a task in collie is by definition

@@ -2,10 +2,15 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { spawnSync } from "node:child_process";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { listTasks } from "../src/store.ts";
 import { readLinearState, syncLinear } from "../src/linear/sync.ts";
 import type { Config } from "../src/types.ts";
+
+/** createTask refuses a path that is not a checkout, so the fixture is one. */
+const REPO = fs.mkdtempSync(path.join(os.tmpdir(), "collie-linear-repo-"));
+spawnSync("git", ["init", "-q"], { cwd: REPO });
 
 /** Never the real ~/.collie: syncLinear creates task files. */
 function freshHome(): string {
@@ -66,7 +71,7 @@ const STATES = [
 function config(over: Partial<Config["linear"]> = {}): Config {
   return {
     ...DEFAULT_CONFIG,
-    linear: { ...DEFAULT_CONFIG.linear, enabled: true, repos: { ENG: "/repos/app" }, ...over },
+    linear: { ...DEFAULT_CONFIG.linear, enabled: true, repos: { ENG: REPO }, ...over },
   };
 }
 
@@ -91,7 +96,7 @@ describe("syncLinear", () => {
 
       const [task] = listTasks();
       expect(task!.status).toBe("queued");
-      expect(task!.repo).toBe("/repos/app");
+      expect(task!.repo).toBe(REPO);
       expect(task!.priority).toBe(50); // Linear "high"
       expect(task!.origin).toEqual({
         kind: "linear", id: "iss_1", ref: "ENG-42",
@@ -146,6 +151,23 @@ describe("syncLinear", () => {
       // no key: the keychain has no collie-linear entry in CI or on a fresh mac
       const res = await syncLinear(config(), { force: true });
       expect(res.skipped === undefined || res.skipped.startsWith("no API key")).toBe(true);
+    } finally {
+      fake.stop();
+    }
+  });
+
+  // The promise the capture form makes, kept on the unattended path too: a
+  // repo that has moved is a reported skip now, not a task that only fails
+  // when the dispatcher reaches for it at 2am.
+  test("an issue whose mapped repo is gone is skipped, with the path in the reason", async () => {
+    const fake = fakeLinear({ issues: [issue()], states: STATES });
+    try {
+      const res = await syncLinear(config({ repos: { ENG: "/nowhere/at/all" } }), { force: true });
+      expect(res.created).toEqual([]);
+      const entry = res.entries[0]!;
+      expect(entry.action).toBe("skip");
+      expect(entry.action === "skip" && entry.reason).toContain("/nowhere/at/all does not exist");
+      expect(listTasks()).toEqual([]);
     } finally {
       fake.stop();
     }

@@ -5,7 +5,7 @@ import { parseArgs } from "node:util";
 import { spawnSync } from "node:child_process";
 import {
   cancelTask, createTask, getTask, listTasks, retryTask, transition, updateTask,
-  expandTilde, stripPromptTemplate, PERMISSION_MODES,
+  expandTilde, repoProblem, stripPromptTemplate, PERMISSION_MODES,
   type Task, type TaskSize, type TaskStatus, type PermissionMode,
 } from "@collie/core";
 
@@ -55,8 +55,12 @@ export function runTaskCommand(argv: string[]): number {
       });
       if (!values.repo) die("--repo is required");
       if (!values.title) die("--title is required");
+      // Before $EDITOR, not after: the prompt someone just wrote is not worth
+      // losing to a typo'd path (createTask checks again — this is only about
+      // when the human finds out).
       const repo = path.resolve(expandTilde(values.repo));
-      if (!fs.existsSync(repo)) die(`repo path does not exist: ${repo}`);
+      const repoIssue = repoProblem(repo);
+      if (repoIssue) die(`repo ${repo} ${repoIssue}`);
       if (!["S", "M", "L"].includes(values.size!)) die("--size must be S|M|L");
       if (values["permission-mode"] && !PERMISSION_MODES.includes(values["permission-mode"] as PermissionMode)) {
         die(`--permission-mode must be one of ${PERMISSION_MODES.join("|")}`);

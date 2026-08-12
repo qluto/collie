@@ -2,7 +2,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 import * as YAML from "yaml";
-import { archiveDir, archivedTaskFilePath, taskFilePath, tasksDir, ensureDataDirs } from "./paths.ts";
+import { archiveDir, archivedTaskFilePath, expandTilde, taskFilePath, tasksDir, ensureDataDirs } from "./paths.ts";
+import { repoProblem } from "./repos.ts";
 import { withLock } from "./lock.ts";
 import { appendEvent } from "./journal.ts";
 import { DEFAULT_CONFIG, loadConfig } from "./config.ts";
@@ -171,6 +172,21 @@ export function getTask(id: string): Task | null {
 
 export function createTask(input: NewTaskInput, opts?: { source?: string }): Task {
   ensureDataDirs();
+
+  // The one funnel every entry point goes through — CLI, TUI, popup, Linear
+  // import — so the repo is checked once, here, and no path can reach the
+  // queue that the dispatcher will only choke on at 2am. Stored absolute:
+  // "~/x" and "./x" are the same repo as "/Users/me/x" to everything that
+  // later groups tasks by it.
+  // Emptiness is checked BEFORE resolving: path.resolve("") is the process's
+  // cwd, so a blank repo would silently become "wherever collie happens to be
+  // running", which for the dispatcher is nowhere near the user's intent.
+  const raw = input.repo.trim();
+  if (raw.length === 0) throw new StoreError("repo is empty");
+  const repo = path.resolve(expandTilde(raw));
+  const problem = repoProblem(repo);
+  if (problem) throw new StoreError(`repo ${raw} ${problem}`);
+
   const now = new Date().toISOString();
   // user config supplies the defaults; fall back to built-ins if it's invalid
   let config = DEFAULT_CONFIG;
@@ -185,7 +201,7 @@ export function createTask(input: NewTaskInput, opts?: { source?: string }): Tas
     title: input.title,
     // tossed in = will run; there is no captured-but-not-queued state anymore
     status: "queued",
-    repo: input.repo,
+    repo,
     priority: input.priority ?? 100,
     size: input.size ?? "M",
     worktree: input.worktree ?? d.worktree,
