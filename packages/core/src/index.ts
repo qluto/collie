@@ -19,3 +19,6 @@ export * from "./quota/forecast.ts";
 export * from "./quota/ccusage.ts";
 export * from "./quota/limits.ts";
 export * from "./quota/state.ts";
+export * from "./linear/api.ts";
+export * from "./linear/plan.ts";
+export * from "./linear/sync.ts";

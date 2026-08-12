@@ -31,7 +31,7 @@ const LEGAL_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
 const FRONTMATTER_KEYS: Array<keyof Task> = [
   "id", "title", "status", "repo", "priority", "size", "worktree", "branch",
   "permissionMode", "claudeArgs", "createdAt", "updatedAt", "queuedAt",
-  "startedAt", "endedAt", "attempts", "maxAttempts", "rev", "run",
+  "startedAt", "endedAt", "attempts", "maxAttempts", "rev", "run", "origin",
 ];
 
 export function serializeTask(task: Task): string {
@@ -197,6 +197,7 @@ export function createTask(input: NewTaskInput, opts?: { source?: string }): Tas
     attempts: 0,
     maxAttempts: input.maxAttempts ?? config.dispatch.maxAttempts,
     rev: 0,
+    origin: input.origin,
     prompt: input.prompt,
   };
   if (task.worktree) task.branch = `collie/${task.id}`;

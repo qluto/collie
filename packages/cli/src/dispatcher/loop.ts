@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import {
   ConfigError, dispatcherStatePath, ensureDataDirs, listTasks, loadConfig, refreshLimits,
-  type DispatcherState, type ScheduleMode,
+  syncLinear, type DispatcherState, type ScheduleMode,
 } from "@collie/core";
 import { adoptMerged } from "./adopt.ts";
 import { createCtx, log, vlog, type DispatcherCtx } from "./ctx.ts";
@@ -59,6 +59,20 @@ export async function tick(ctx: DispatcherCtx): Promise<void> {
     log(ctx, `limits: ${limits.skipped}; falling back to ccusage estimates`);
   }
   ctx.lastLimitsSkip = limits.skipped;
+
+  // New work from outside, on its own much slower clock (the module throttles
+  // itself). A third-party API being down is a log line, never a tick that
+  // stops: everything below still has a night to run.
+  try {
+    const sync = await syncLinear(ctx.config);
+    for (const id of sync.created) log(ctx, `linear: imported ${id}`);
+    for (const w of sync.warnings) log(ctx, `linear: ${w}`);
+  } catch (err) {
+    if (ctx.lastLinearError !== (err as Error).message) {
+      log(ctx, `linear: ${(err as Error).message}`);
+      ctx.lastLinearError = (err as Error).message;
+    }
+  }
 
   await reconcile(ctx);
   await watchdog(ctx);

@@ -23,6 +23,8 @@ export interface DispatcherCtx {
   lastDecision: string;
   /** last limits-refresh skip reason, so the log isn't repeated every tick */
   lastLimitsSkip?: string;
+  /** last Linear failure, so an outage is one log line and not one per poll */
+  lastLinearError?: string;
   degraded: boolean;
 }
 

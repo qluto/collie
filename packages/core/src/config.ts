@@ -84,6 +84,24 @@ roots = []
 permission_mode = "auto"
 worktree = true
 worktree_root = "~/dev/worktrees"
+
+[linear]
+# Auto-collect Linear issues carrying \`label\` as collie tasks. Off by default,
+# and it stays off until a team below maps to a local repo — an issue with
+# nowhere to run is skipped, never guessed at.
+#
+# The API key is NOT read from this file (the TUI shows this file in full):
+#   security add-generic-password -s "collie-linear" -a "$USER" -w "lin_api_..."
+enabled = false
+label = "collie"
+poll_interval_min = 5        # someone else's API: minutes, not the 30s tick
+size = "M"                   # imported tasks all get this size
+start_state = ""             # move the issue here on import; "" = the team's first started state
+comment = true               # comment the collie task id back onto the issue
+
+[linear.repos]
+# Linear team key (the issue-number prefix) -> local repo.
+# "ENG" = "~/dev/projects/myapp"
 `;
 
 export const DEFAULT_CONFIG: Config = {
@@ -132,6 +150,15 @@ export const DEFAULT_CONFIG: Config = {
   },
   done: {
     close: false,
+  },
+  linear: {
+    enabled: false,
+    label: "collie",
+    pollIntervalMin: 5,
+    repos: {},
+    size: "M",
+    startState: "",
+    comment: true,
   },
 };
 
@@ -284,6 +311,31 @@ export function parseConfig(toml: string): Config {
         if (typeof v !== "boolean") fail("done.close must be a boolean");
         return v;
       }),
+    },
+    linear: {
+      enabled: pick("linear.enabled", d.linear.enabled, (v) => bool(v, "linear.enabled")),
+      label: pick("linear.label", d.linear.label, (v) => str(v, "linear.label")),
+      // 1 minute floor and a 1 day ceiling: below the floor this is hammering
+      // someone else's API, above the ceiling it is not an integration.
+      pollIntervalMin: pick("linear.poll_interval_min", d.linear.pollIntervalMin, (v) => num(v, "linear.poll_interval_min", { min: 1, max: 1440 })),
+      repos: pick("linear.repos", d.linear.repos, (v) => {
+        if (v === null || typeof v !== "object" || Array.isArray(v)) {
+          fail("linear.repos must be a table of team key -> repo path");
+        }
+        const out: Record<string, string> = {};
+        for (const [team, repo] of Object.entries(v as Record<string, unknown>)) {
+          out[team] = expandTilde(str(repo, `linear.repos.${team}`));
+        }
+        return out;
+      }),
+      size: pick("linear.size", d.linear.size, (v) => oneOf(v, "linear.size", SIZES)),
+      // Empty is meaningful (let the team's own workflow decide), so this one
+      // takes any string rather than str()'s non-empty check.
+      startState: pick("linear.start_state", d.linear.startState, (v) => {
+        if (typeof v !== "string") fail("linear.start_state must be a string");
+        return v;
+      }),
+      comment: pick("linear.comment", d.linear.comment, (v) => bool(v, "linear.comment")),
     },
   };
 }

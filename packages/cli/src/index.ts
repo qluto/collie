@@ -5,6 +5,7 @@ import { runGcCommand } from "./commands/gc.ts";
 import { runDoctor } from "./commands/doctor.ts";
 import { runHookCommand } from "./commands/hook.ts";
 import { runDispatcherCommand } from "./commands/dispatcher.ts";
+import { runLinearCommand } from "./commands/linear.ts";
 
 const USAGE = `collie — task queue for Claude Code sessions on Herdr
 
@@ -25,6 +26,8 @@ Usage:
                             # --force also deletes untracked files in a worktree
   collie dispatcher run [--once] [--verbose] | status
   collie dispatcher install | restart | uninstall     (launchd)
+  collie linear sync [--dry-run] | status
+                            # collect Linear issues carrying the marker label
   collie new [--popup]      # the capture form alone, for a herdr popup keybinding
   collie tui
   collie doctor
@@ -43,6 +46,8 @@ async function main(argv: string[]): Promise<number> {
       return runDoctor();
     case "dispatcher":
       return runDispatcherCommand(rest);
+    case "linear":
+      return runLinearCommand(rest);
     case "hook":
       return runHookCommand(rest);
     case "new": {

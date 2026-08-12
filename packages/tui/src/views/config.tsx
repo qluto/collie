@@ -64,6 +64,18 @@ function sectionsOf(c: Config): Section[] {
         c.defaults.worktreeRoot,
       ],
     },
+    {
+      label: "🔗 linear",
+      lines: c.linear.enabled
+        ? [
+            `label "${c.linear.label}" · every ${c.linear.pollIntervalMin}min · size ${c.linear.size}`,
+            // The mapping is the gate: a team missing here is an issue that is
+            // labelled, polled, and then silently skipped.
+            Object.entries(c.linear.repos).map(([k, v]) => `${k} → ${v}`).join(" · ")
+              || "(no team → repo mapping — every issue would be skipped)",
+          ]
+        : ["off · collie only runs what you toss in"],
+    },
     { label: "🐕 herdr", lines: [c.herdr.socketPath] },
     {
       label: "📁 repos",

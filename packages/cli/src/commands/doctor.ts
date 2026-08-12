@@ -2,7 +2,8 @@ import * as fs from "node:fs";
 import * as net from "node:net";
 import { spawnSync } from "node:child_process";
 import {
-  ConfigError, ensureDataDirs, hubHome, inputIdleSeconds, loadConfig, refreshLimits,
+  ConfigError, KEYCHAIN_SERVICE, ensureDataDirs, hubHome, inputIdleSeconds, loadConfig,
+  readApiKey, refreshLimits,
 } from "@collie/core";
 
 function check(label: string, ok: boolean, detail?: string): boolean {
@@ -47,6 +48,18 @@ export async function runDoctor(): Promise<number> {
       true,
       idle === null ? "probe failed" : `input idle ${Math.round(idle)}s`,
     );
+
+    // Only fatal when it is switched on: an enabled importer with no key or no
+    // repo mapping silently collects nothing, which looks exactly like an
+    // empty backlog.
+    if (config.linear.enabled) {
+      const key = readApiKey() !== null;
+      const repos = Object.keys(config.linear.repos).length;
+      allOk = check("linear api key (keychain)", key, key ? undefined : `add it: security add-generic-password -s "${KEYCHAIN_SERVICE}" -a "$USER" -w "lin_api_…"`) && allOk;
+      allOk = check("linear repo mapping", repos > 0, repos > 0 ? `${repos} team(s)` : "[linear.repos] is empty — every issue would be skipped") && allOk;
+    } else {
+      check("linear disabled", true, "collie linear status");
+    }
   }
 
   const claude = spawnSync("claude", ["--version"], { encoding: "utf8" });

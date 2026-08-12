@@ -42,6 +42,11 @@ export function limitsStatePath(): string {
   return path.join(hubHome(), "limits.json");
 }
 
+/** Which Linear issues have already become tasks, and when we last looked. */
+export function linearStatePath(): string {
+  return path.join(hubHome(), "linear.json");
+}
+
 /** Cached answer to "did each task's branch land?" (see branches.ts). */
 export function branchScanPath(): string {
   return path.join(hubHome(), "branches.json");

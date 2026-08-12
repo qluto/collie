@@ -120,6 +120,45 @@ macOS Keychain にある claude の OAuth トークンを**読むだけ**で、�
 「取得不可」として扱います（リフレッシュは認証情報のローテーションになるため
 行いません）。
 
+**Linear 連携**（既定 off）: ラベルの付いた issue を自動でタスクに回収します。
+外部システムなので `poll_interval_min`（既定5分）でポーリングし、30秒の dispatch
+tick には乗せません。
+
+```sh
+# API キーは config.toml ではなく Keychain（Config タブは設定ファイルを全文表示するため）
+security add-generic-password -s "collie-linear" -a "$USER" -w "lin_api_..."
+```
+
+```toml
+[linear]
+enabled = true
+label = "collie"             # このラベルが付いた open な issue を回収
+poll_interval_min = 5
+size = "M"                   # 取り込んだタスクのサイズ
+start_state = ""             # 取り込み時にこの状態へ移す（"" = そのチームの最初の started 状態）
+comment = true               # collie のタスクIDを issue にコメント
+
+[linear.repos]
+"ENG" = "~/dev/projects/myapp"   # Linear のチームキー -> ローカル repo
+```
+
+repo が引けないチームの issue は**回収せずスキップし、理由を必ず出します**（ラベルを
+付けたのに何も起きない、が一番困るため）。`collie linear sync --dry-run` で何が起きるか
+だけ確認できます:
+
+```
+would import  ENG-42  flaky ログインテストを直す  -> ~/dev/projects/myapp
+skip    ENG-43  state "In Progress" is already under way
+skip    OPS-7   no repo mapped for team OPS
+1 would be imported, 2 skipped (dry run: nothing written)
+```
+
+二重回収は2重に防いでいます: ローカルの台帳（`linear.json`、書き戻しより先に記録）と、
+Linear 側の状態そのもの（取り込み時に started へ動かし、started の issue は回収対象外）。
+書き戻しは best-effort で、失敗してもタスクは残り警告だけが出ます。Linear の優先度は
+キュー順に反映されます（Urgent が先頭、未設定は Normal 扱い）。`collie linear status`
+で設定・キー・回収済み一覧を確認できます。
+
 ## How it works
 
 ```

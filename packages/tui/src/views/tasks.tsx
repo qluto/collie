@@ -97,6 +97,9 @@ function metaLine(t: Task, now: number): string {
     `p${t.priority}`,
     t.size,
     t.repo.split("/").at(-1) ?? "",
+    // A task nobody typed says where it came from: "why is this queued" has a
+    // different answer for an imported issue than for one you tossed in.
+    t.origin?.ref ?? "",
     t.status === "running" ? heartbeatBadge(t, now) : "",
   ]
     .filter(Boolean)

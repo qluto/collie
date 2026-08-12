@@ -71,6 +71,19 @@ describe("TaskList", () => {
     expect(frame.indexOf("still going")).toBeLessThan(frame.indexOf("tonight's work"));
   });
 
+  // "why is this queued" has a different answer for an imported issue than for
+  // one a human tossed in, so the card says which it is.
+  test("an imported task carries the reference it came from", () => {
+    const tasks = [
+      task({ id: "t-1", status: "queued", title: "flaky テストを直す",
+        origin: { kind: "linear", id: "iss_1", ref: "ENG-42" } }),
+    ];
+    const { lastFrame } = render(
+      <TaskList tasks={tasks} focusIdx={0} columns={80} rows={24} diffFor={noDiff} questionFor={noQuestion} />,
+    );
+    expect(lastFrame()!).toContain("p100 · M · repo · ENG-42");
+  });
+
   test("a running task with no heartbeat yet says so rather than lying about its age", () => {
     const { lastFrame } = render(
       <TaskList tasks={[task({ id: "t-1", status: "running", title: "just spawned" })]} focusIdx={0}

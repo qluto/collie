@@ -48,6 +48,22 @@ export interface TaskRun {
   questionScrapedAt?: string;
 }
 
+/**
+ * Where a task came from when it was not a human at the capture form.
+ *
+ * Recorded on the task itself so the provenance outlives the import run and
+ * follows the file into the archive; the importer's own index is a cache in
+ * front of this, not a second truth.
+ */
+export interface TaskOrigin {
+  kind: "linear";
+  /** stable id in the source system — what dedup keys on */
+  id: string;
+  /** what a human would call it, e.g. "ENG-42" */
+  ref: string;
+  url?: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -68,6 +84,7 @@ export interface Task {
   maxAttempts: number;
   rev: number;
   run?: TaskRun;
+  origin?: TaskOrigin;
   /** Markdown body of the task file — the prompt, verbatim. */
   prompt: string;
 }
@@ -82,6 +99,7 @@ export interface NewTaskInput {
   permissionMode?: PermissionMode;
   claudeArgs?: string[];
   maxAttempts?: number;
+  origin?: TaskOrigin;
 }
 
 export interface ScheduleWindow {
@@ -167,6 +185,28 @@ export interface Config {
   done: {
     /** tear the task's pane/worktree down as part of `collie done` */
     close: boolean;
+  };
+  linear: {
+    /**
+     * Off by default: collie must never start reaching out to a third-party
+     * API because a config template grew a section.
+     */
+    enabled: boolean;
+    /** issue label that marks an issue as collie's to run */
+    label: string;
+    /**
+     * Someone else's API, and issues do not appear by the second: this is
+     * polled in minutes, not on the 30s dispatch tick.
+     */
+    pollIntervalMin: number;
+    /** Linear team key (the issue-number prefix) -> local repo path */
+    repos: Record<string, string>;
+    /** size every imported task gets; Linear estimates are workspace-specific */
+    size: TaskSize;
+    /** workflow state to move an imported issue into; "" = the team's first started one */
+    startState: string;
+    /** comment the collie task id back onto the issue */
+    comment: boolean;
   };
 }
 

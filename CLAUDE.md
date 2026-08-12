@@ -175,6 +175,42 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
   reported the probe healthy. Any subprocess the dispatcher spawns has that
   same exposure; don't trust a bare command name there.
 
+## Linear import (external system, own clock)
+
+- `[linear]`, default OFF, and off is the only safe default: collie must never
+  start reaching a third-party API because a config template grew a section.
+  Issues carrying `label` become queued tasks. Runs at the TOP of the tick like
+  `refreshLimits`, but throttles itself to `poll_interval_min` (minutes, not
+  the 30s tick — someone else's API never agreed to collie's heartbeat).
+- The API key is read from the macOS Keychain (`collie-linear`), NEVER from
+  config.toml: the Config tab renders that file in full. `COLLIE_LINEAR_API_KEY`
+  overrides it for tests. Personal API keys go in `Authorization` VERBATIM — no
+  `Bearer` prefix. Read-only on the credential, same rule as claude's.
+- `linear/plan.ts` is pure and holds every decision; `linear/api.ts` is the only
+  thing that talks GraphQL, and `COLLIE_LINEAR_API_URL` points it at a fake.
+  That split is deliberate: the live API shape is the one thing tests cannot
+  pin, so nothing that *decides* anything is allowed to live behind it. Only
+  `completedAt`/`canceledAt` are filtered server-side; "is this state already
+  under way" is decided client-side, where it is tested.
+- **A skipped issue always says why** (`no repo mapped for team OPS`,
+  `state "In Progress" is already under way`). An issue labelled for collie
+  that quietly never becomes a task is the failure someone burns an evening on,
+  and `collie linear sync --dry-run` is the whole plan without writing anything.
+- Two lines of dedup, in this order: the ledger (`linear.json`, issue id ->
+  task id, written BEFORE the write-back so a crash mid-round-trip cannot
+  duplicate) and, behind it, Linear's own board — collie moves an imported
+  issue into a `started` state, and started states are not import candidates.
+  The task's `origin` field is the record the ledger caches; a lost ledger is
+  re-derived from the working set and costs at worst a re-import of issues
+  Linear also still calls unstarted.
+- The write-back is BEST-EFFORT and must never cost the import: state move and
+  comment failures become warnings on a task that already exists. An API outage
+  throws, but the poll clock still advances — otherwise a failure turns into a
+  call every 30 seconds for the rest of the night — and the dispatcher logs it
+  once, not once per tick (`ctx.lastLinearError`).
+- Task fields that come from outside get no special casing: `origin` is in
+  `FRONTMATTER_KEYS`, is optional, and the TUI shows `origin.ref` on the card.
+
 ## Non-obvious invariants
 
 - Two task axes, do not conflate them: `size` = token-cost estimate (feeds the
