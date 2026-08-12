@@ -25,7 +25,7 @@ collie task add --repo ~/dev/projects/myapp --title "flaky テストを直す"
 # 4. ディスパッチャを常駐させる（launchd）
 collie dispatcher install
 
-# 5. TUI — 朝の収穫ビュー + ボード（Herdr のペイン内で開くのがおすすめ）
+# 5. TUI — タスク一覧（Herdr のペイン内で開くのがおすすめ）
 collie tui
 ```
 
@@ -34,13 +34,16 @@ collie tui
 `[repos] roots = ["~/dev/projects", "~/ghq/github.com"]` を設定すると、TUI の
 新規タスクフォームでリポジトリを一覧から選べます（2階層まで探索するので
 ghq 形式の org 階層にも対応。入力でフィルタ、↑↓で選択、自由入力も可）。
-既定では 00:00–07:00 が full モード、それ以外は conservative（小さめのタスクのみ、
-予算の 35% まで）です。
+既定では 00:00–07:00 が full モード（サイズ不問）、それ以外は conservative
+（`conservative_max_size` 以下＝既定では M まで、予算も 35% まで）です。モード名は
+設定ファイルの語ですが、画面のヘッダーには**何を拾うか**が出ます — `● any size` /
+`● up to M` / `● paused`。Config タブは両方を並べて表示する唯一の場所です
+（`00:00-07:00 full — any size`）。
 
 **1日のサイクル**: collie に入れる = 「私がいなくてもいい」と宣言したこと。
 昼に投函（repo・タイトル・サイズの3問、10秒）→ 夜に自動投入（presence × クォータ
-残量で判断、reset 間際は burn-down で余り予算を使い切る）→ 朝に収穫（Harvest
-ビューで承認・質問への返答・retry）。タスクの軸は `size`（S/M/L = トークン消費の
+残量で判断、reset 間際は burn-down で余り予算を使い切る）→ 朝に回収（Tasks
+画面で承認・質問への返答・retry）。タスクの軸は `size`（S/M/L = トークン消費の
 見積もり）と `priority`（キューの並び順のみ）の2つだけです。
 
 **burn-down**: セッション予算は reset で消滅するので、`[quota.burn_down]`
@@ -71,7 +74,7 @@ TUI の `d` のほかに、**エージェントのペインに居たまま** don
 ```
 
 herdr のキーバインドからも呼べます（`~/.config/herdr/config.toml`）。フォーカス中の
-ペインからタスクを逆引きするので、ボードに戻る必要がありません:
+ペインからタスクを逆引きするので、TUI に戻る必要がありません:
 
 ```toml
 [[keys.command]]
@@ -156,7 +159,7 @@ Key design decisions, learned the hard way:
   (+ jitter) and the task requeues without burning an attempt.
 - **Questions don't kill the night**: a task blocked on a question stops
   counting toward WIP (it burns no tokens); the hook message plus a scraped
-  pane tail land on the task for the morning harvest, and `asking_limit`
+  pane tail land on the task, ready for the morning, and `asking_limit`
   stops the pile from growing unbounded. One caveat: `a` sends literal text —
   if the agent asked via an option menu, jump to the pane (`J`) instead.
 
@@ -166,31 +169,41 @@ Key design decisions, learned the hard way:
 元のシェル画面を復元します。日本語 IME に対応：変換中テキストは入力欄のカーソル
 位置にインライン表示され、複数文字の一括確定でも文字が欠けません。
 
-デフォルトタブは **Harvest（収穫）** — 夜が生んだ結果を朝に回収する画面です。
-✅ Review（diff 要約つき）/ ❓ Asking（エージェントの質問をインライン表示）/
-✗ Failed の3グループが並び、2行目のヘッダーには常に予算予報
+タブは **Tasks** と **Config** の2枚だけ。Tasks はすべてのタスクを1本の縦リスト
+にまとめた画面で、人が処理する順に並びます — 決断を待つ ✅ Review（diff 要約つき）
+/ ❓ Asking（エージェントの質問をインライン表示）/ ❌ Failed、続いて何も要求しない
+🏃 Running（ハートビート付き）/ ⏳ Queued（優先度・サイズ・repo）、最後に
+🗑 Dropped と 📦 Done（`A` で開閉）。2行目のヘッダーには常に予算予報
 （`session 42% · resets 02:00 (+3h10m) · headroom 43% ≈5 tasks`）が出ます。
+
+グループ固有の操作はそのグループのヘッダーに書いてあります
+（`⏳ Queued 3 · e edit · [ ] reorder · x delete`）。フッターは全体共通のキーだけ。
 
 | キー | 動作 |
 |---|---|
-| `1` `2` `3` | Harvest / Board / Config タブ |
+| `1` `2` | Tasks / Config タブ |
 | `j k` / 矢印 | カード移動 |
 | `n` | 新規タスク（repo → タイトル → サイズの3問 → $EDITOR でプロンプト） |
 | `d` | Review → Done 昇格（done はアーカイブへ移動） |
 | `a` | Asking のタスクに返答（そのペインに送信して再開） |
 | `r` | retry（Review / Failed、attempts リセット） |
-| `J` | そのタスクの Herdr ペインへジャンプ（Harvest）/ 優先度並び替え（Board） |
+| `J` | そのタスクの Herdr ペインへジャンプ |
+| `o` | そのタスクの claude セッションを再開（`claude --resume`） |
 | `e` | プロンプト（または config）を $EDITOR で編集（queued のみ） |
-| `x` | queued は削除、実行中はキャンセル（確認あり） |
+| `[` `]` | キュー順を前へ／後ろへ（queued のみ） |
+| `x` | queued は削除、実行中はキャンセル、Dropped はブランチ破棄（確認あり） |
+| `u` | Dropped を Review に戻す |
+| `A` | Done アーカイブの開閉 |
 | `Enter` / `Esc` | 詳細表示 / 戻る |
 | `g` | 詳細画面から、そのタスクの Herdr ペインへジャンプ |
 | `?` / `q` | ヘルプ / 終了 |
 
-Board は Queued / Running / Asking / Review / Failed の5レーン（Done はアーカイブ
-されるためレーンなし）。横幅が 70 桁未満（moshi 経由のモバイル等）では、レーンを
-横に並べる代わりに**縦に積む**表示へ自動で切り替わります。空のレーンは畳まれ、
-画面に入り切らない分は `… +N` や末尾の要約行として明示されます（Ink はスクロール
-できないため、行数は明示的に配分しています）。
+以前は Queued / Running / Asking / Review / Failed の5レーンを持つ Board タブが
+別にありましたが、うち3レーンが Tasks と重複し、同じキーが両タブで別の意味
+（`J` = ジャンプ / 優先度下げ、`x` = ブランチ破棄 / キャンセル）を持っていたため、
+1本のリストに統合しました。縦1列なので横幅の狭い端末（moshi 経由のモバイル等）
+でも同じ表示のまま使えます。画面に入り切らない分は `… +N more` として明示されます
+（Ink はスクロールできないため、行数は明示的に配分しています）。
 
 ## CLI
 
@@ -220,7 +233,7 @@ Contributor notes (wire quirks, invariants, testing conventions) live in
 [CLAUDE.md](CLAUDE.md).
 
 Monorepo: `packages/core` (store, herdr client, quota), `packages/cli`
-(dispatcher, hooks, task commands), `packages/tui` (Ink: harvest view + board).
+(dispatcher, hooks, task commands), `packages/tui` (Ink: task list + config).
 
 Runtime data lives in `~/.collie/` (override with `COLLIE_HOME`).
 `COLLIE_DEBUG=1` logs raw socket frames; `COLLIE_CCUSAGE_BIN` overrides

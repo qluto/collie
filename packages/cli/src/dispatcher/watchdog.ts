@@ -69,7 +69,7 @@ export async function watchdog(ctx: DispatcherCtx): Promise<void> {
  * The Notification hook only carries Claude's generic phrasing ("Claude is
  * waiting for your input") — the actual question is on screen. Hooks must stay
  * under 200ms, so the read rides this 30s tick instead. One shot per block:
- * questionScrapedAt marks the pane as harvested.
+ * questionScrapedAt marks the pane as scraped.
  */
 export async function scrapeQuestions(ctx: DispatcherCtx): Promise<void> {
   for (const task of listTasks({ status: ["blocked"] })) {

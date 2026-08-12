@@ -9,7 +9,7 @@ describe("displayWidth", () => {
   });
 
   test("emoji-presentation symbols are two cells, their text cousins one", () => {
-    // the group markers the harvest header is built from
+    // the group markers the group headers are built from
     expect(displayWidth("✅")).toBe(2);
     expect(displayWidth("❓")).toBe(2);
     expect(displayWidth("❌")).toBe(2);

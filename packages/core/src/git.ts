@@ -139,7 +139,7 @@ function formatShortstat(out: string): string | null {
 }
 
 /**
- * One line of "what did this task actually change", for the harvest view.
+ * One line of "what did this task actually change", for the task list.
  *
  * A worktree task is measured three-dot (`HEAD...branch`): two-dot would count
  * everything HEAD gained since the branch forked, which is the human's work,

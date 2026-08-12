@@ -1,4 +1,4 @@
-import type { Config, ScheduleMode } from "../types.ts";
+import type { Config, ScheduleMode, TaskSize } from "../types.ts";
 import type { LimitSnapshot } from "./limits-api.ts";
 import { effectiveSessionFraction } from "./gate.ts";
 
@@ -56,6 +56,21 @@ export function computeForecast(
     tasksLeft: pctPerTask > 0 ? Math.floor(headroomPct / pctPerTask) : null,
     burning,
   };
+}
+
+/**
+ * A schedule mode as what it will actually pick up, not as its own name.
+ *
+ * `full`/`conservative`/`paused` are gate vocabulary: they say which lever is
+ * pulled, never what it does, and abbreviated to fit a header ("cons") they say
+ * nothing at all. What the mode decides is exactly one thing a human already
+ * answered — the S/M/L the new-task form asked for — so the header reports it
+ * in those terms. The config file and the Config tab still name the modes; that
+ * tab is where the two are shown side by side.
+ */
+export function modeLabel(mode: ScheduleMode, conservativeMaxSize: TaskSize): string {
+  if (mode === "paused") return "paused";
+  return mode === "full" ? "any size" : `up to ${conservativeMaxSize}`;
 }
 
 /** Local wall-clock HH:MM — the reset time only means anything in the user's day. */

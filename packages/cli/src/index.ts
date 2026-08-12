@@ -46,8 +46,8 @@ async function main(argv: string[]): Promise<number> {
     case "hook":
       return runHookCommand(rest);
     case "new": {
-      // Lazy, and from the subpath: the capture form must not drag the board,
-      // the harvest view and their evidence caches into a popup.
+      // Lazy, and from the subpath: the capture form must not drag the task
+      // view and its evidence caches into a popup.
       const { runNewTask } = await import("@collie/tui/new");
       return runNewTask({ popup: rest.includes("--popup") });
     }

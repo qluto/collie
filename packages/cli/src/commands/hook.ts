@@ -71,7 +71,7 @@ export async function runHookCommand(argv: string[]): Promise<number> {
       case "notification": {
         if (task.status === "running") {
           // The message is the only in-hook evidence of WHY the session stopped;
-          // the morning harvest view reads it. Capped so a runaway payload can't
+          // the task list reads it. Capped so a runaway payload can't
           // bloat the task file.
           const msg = String((payload as { message?: unknown }).message ?? "").slice(0, 300);
           transition(taskId, "blocked", { question: msg || undefined }, { source: "hook-notification" });

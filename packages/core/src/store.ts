@@ -20,7 +20,7 @@ const LEGAL_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   running: ["blocked", "review", "failed", "queued"],
   blocked: ["running", "review", "failed", "queued"], // blocked→queued: pane died while blocked
   review: ["done", "queued"],
-  // done→review is the undo for a task closed too fast (the harvest's `u`): it
+  // done→review is the undo for a task closed too fast (the task list's `u`): it
   // walks back out of the archive into the working set.
   done: ["review"],
   failed: ["queued"],

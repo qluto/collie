@@ -6,7 +6,7 @@ runs without me"), the dispatcher burns leftover token quota at night
 (presence × limits × burn-down), harvest the results in the morning (approve /
 answer questions / retry). Monorepo (bun workspaces): `packages/core` (store,
 herdr socket client, quota), `packages/cli` (single `collie` bin: task
-commands, dispatcher, hooks), `packages/tui` (Ink: harvest view + board).
+commands, dispatcher, hooks), `packages/tui` (Ink: task list + config).
 
 ## Commands
 
@@ -191,18 +191,18 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
 - WIP counts `running` only — a task blocked on a question burns no tokens, so
   it must not starve the night. `dispatch.asking_limit` (min 1; 0 would pause
   dispatch forever) backstops the pile of unanswered questions instead.
-- Question harvest: the Notification hook stores `payload.message` in
+- Question capture: the Notification hook stores `payload.message` in
   `run.question` (300-char cap); the dispatcher's `scrapeQuestions` writes the
   real pane text to `runs/<id>/question.txt` once per blocked episode
   (`questionScrapedAt` marks it). The stop hook clears both — an answered
-  question must not linger. Harvest's `a` answers via `agent.send` + explicit
+  question must not linger. The task list's `a` answers via `agent.send` + explicit
   `pane.send_keys` Enter and leaves status alone (the stop hook unblocks).
 
 - `done` ≠ merged, and the difference is the point. Merging a task's branch IS
   the review, so the dispatcher's `adoptMerged` promotes a `review` task whose
   branch HEAD already contains straight to `done` (`source: merge-detect`) —
   and what is left in `done` with an unmerged branch is therefore work the human
-  looked at and dropped, which harvest shows as `🗑 Dropped` (`x` discards,
+  looked at and dropped, which the list shows as `🗑 Dropped` (`x` discards,
   `u` reopens). Three constraints hold that up:
   1. The branch's BIRTH COMMIT is what makes "contained in HEAD" mean "landed":
      a branch that never got a commit is contained from birth, and
@@ -226,7 +226,7 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
   it) and clears `run.paneId` in the same transition patch — the last chance to,
   since an archived task is out of `updateTask`'s reach. The worktree is left
   for gc: it is what makes a later `claude --resume` land on the files as the
-  agent left them. What survives all of it is the session, so harvest/detail
+  agent left them. What survives all of it is the session, so the list/detail
   `o` reopens a finished task's conversation in a fresh workspace — the
   transcript lives under `~/.claude` and outlives pane, worktree and branch, and
   `claude --resume <id>` resolves a session id from ANY cwd (live-probed:
@@ -277,43 +277,70 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
   (`runTui`); text input accumulates chunks in a ref (IME commit bursts race
   React batching otherwise). Text-input rows are position-fixed — if you
   change a form's layout, update REPO_ROW/TITLE_ROW/INPUT_COL in newTask.tsx
-  and ANSWER_INPUT_ROW/QUESTION_LINES in harvest.tsx (the answer overlay pads
+  and ANSWER_INPUT_ROW/QUESTION_LINES in views/tasks.tsx (the answer overlay pads
   the question block to a fixed height so the input row cannot drift). The
   forecast header (2nd line) renders ONLY when no overlay is open — an extra
   line above a form would shift every fixed row.
-- The default tab is Harvest (review / asking / failed with one-key actions);
-  the board is the "see everything" sub-view: 5 lanes, `blocked` is labeled
-  "Asking", done has no lane (archived out of the working set).
-- Done work is still reachable: Harvest ends in a folded `📦 Done N · A to open`
+- Screen words name what a thing IS or DOES, never which internal lever moved.
+  Two that failed that test and were changed: the tab was "Harvest" (a ritual
+  the user had to be told about, and wrong once the list held queued and
+  running work — it is `views/tasks.tsx`, `TaskList`, `orderedTasks` now), and
+  the header's mode chip read `● cons`, an abbreviation of gate vocabulary that
+  says nothing at all. `modeLabel` (core/quota/forecast.ts) renders a mode as
+  what it will pick up — `any size` / `up to M` (the `conservative_max_size`
+  cap, read from config, never assumed) / `paused` — i.e. in the S/M/L the
+  new-task form already made the human answer. config.toml and `dispatcher
+  status` still name the modes; the Config tab is the ONE place both appear
+  (`00:00-07:00 full — any size`), so the two vocabularies meet exactly once,
+  where someone would go to ask.
+- There are two tabs, Tasks and Config. Tasks is ONE list of every task, in
+  the order a human deals with it: the three groups that want a decision
+  (✅ Review / ❓ Asking / ❌ Failed, coloured) then the two that want nothing
+  (🏃 Running / ⏳ Queued, colourless — that is the whole signal), then 🗑 Dropped
+  and the folded 📦 Done. A Board tab of 5 kanban lanes used to hold the second
+  half; three of its lanes repeated this list and the SAME KEY meant different
+  things per tab (`J` jump vs priority-down, `x` discard-branch vs cancel),
+  which is what the merge was for. Group-specific keys ride in the group HEADER
+  (`⏳ Queued 3 · e edit · [ ] reorder · x delete`) — the pattern 🗑 Dropped
+  already used; the footer stays the universal set. `x` now has one meaning,
+  "throw this away", and the confirm dialog says what that costs for the status
+  under the cursor. Queue order is `[`/`]` because `j`/`k` are list movement and
+  `J` is the jump — and the cursor follows the card it moved, which is only
+  correct because `reorderPlan` RENUMBERS the queue densely instead of trading
+  two priorities: every task is created at the same default, and swapping equal
+  numbers is not a swap — ±1 off a shared value jumps the card past the whole
+  tied block (the board shipped that bug invisibly, since nothing followed the
+  card). Only the entries whose number changes are written.
+- Done work is still reachable: the list ends in a folded `📦 Done N · A to open`
   line that `A` expands into a 4th group (newest 20, `endedAt` desc, Enter opens
   the same Detail). It reads `listArchived(limit)`, NOT the snapshot —
   `snap.tasks` stays the working set the board and dispatcher reason about, and
   the archive only grows, so selection is by file mtime and `limit: 0` (folded)
-  is a single readdir per tick. Archived tasks reach `harvestList` only through
+  is a single readdir per tick. Archived tasks reach `orderedTasks` only through
   its second argument.
-- Below `NARROW_COLUMNS` (70) the board switches to `StackedBoard` — five lanes
-  side by side cannot hold a title on a phone. Ink has NO scrolling: anything
-  past the last row is gone, so the stacked layout budgets rows explicitly
-  (header + cards + the `… +N` row, which is the one that overflows if you
-  forget it) and drops whole lanes into a summary line rather than off-screen.
-  `Detail` cuts every line to the pane width for the same reason — a wrapped
-  line shifts the rest and the repaint lands on the previous frame, which reads
-  as corruption.
-- Whitespace is budgeted, not decorative: Harvest and Config compute their rows
+- Ink has NO scrolling: anything past the last row is gone, so every view
+  budgets rows explicitly. The task list counts each rendered line (group header,
+  title, each detail line, the `… +N more` row — that last one is what
+  overflows if you forget it, and it is also what makes truncation honest) and
+  slides its window down until the focused card is inside it. Below
+  `NARROW_COLUMNS` (70) the tab bar drops the wordmark and the help hint; the
+  list itself needs no narrow variant, which is what killing the five-lane
+  board bought. `Detail` cuts every line to the pane width for the same reason
+  — a wrapped line shifts the rest and the repaint lands on the previous frame,
+  which reads as corruption.
+- Whitespace is budgeted, not decorative: the task list and Config compute their rows
   with the blank separators included and drop them FIRST when the pane is short
-  (Harvest's `airy` flag needs the whole harvest to fit; Config falls back
+  (the list's `airy` flag needs the whole list to fit; Config falls back
   spaced → packed → `… +N lines`). Never add a bare blank `<Text>` outside that
   arithmetic — Ink cannot scroll, so it costs a real line of content.
 - `displayWidth` carries an explicit East_Asian_Width=W table for the symbol
   blocks (✅ ❌ ❓ are 2 cells, ✓ ✗ · are 1) and reads U+FE0F/U+FE0E, which is
   what decides "⚙" (1) vs "⚙️" (2). Guessing by block is wrong in both
   directions; `padToWidth` builds the Config label column on top of it.
-- Board text is truncated/wrapped by `truncateToWidth`/`wrapToWidth`, never by
-  Ink's `wrap="truncate"`: Ink miscounts CJK by a cell and the column border
-  falls off the row. Column boxes carry an explicit `width` (not flexGrow) so
-  yoga cannot round differently than that arithmetic did; the focused column
-  is widened (FOCUS_SHARE, capped at MAX_FOCUS) because five columns of a
-  normal terminal leave ~15 cells — too narrow for a Japanese title.
+- View text is truncated/wrapped by `truncateToWidth`/`wrapToWidth`, never by
+  Ink's `wrap="truncate"`: Ink miscounts CJK by a cell and the line runs past
+  the pane width. Any box that must line up with that arithmetic needs an
+  explicit `width` (not flexGrow) so yoga cannot round differently.
 - Jumping to a task's pane uses `agent.focus {target: paneId}` (0.8.0 also has
   `pane.focus`; tab/workspace focus need ids a task may not carry). Focusing is
   also what marks a tab seen, i.e. what turns herdr's `done` badge off.

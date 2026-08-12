@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { configPath, loadConfig } from "@collie/core";
-import type { Config } from "@collie/core";
+import { configPath, loadConfig, modeLabel } from "@collie/core";
+import type { Config, ScheduleMode } from "@collie/core";
 import { padToWidth, truncateToWidth } from "../cursor.ts";
 
 /** Width of the emoji+name column every value lines up against. */
@@ -22,8 +22,13 @@ const M = (tokens: number): string => `${(tokens / 1e6).toFixed(0)}M`;
  * then what it runs with.
  */
 function sectionsOf(c: Config): Section[] {
+  // The one place both vocabularies appear: the file names the modes, the
+  // header says what they pick up, and a user who wondered what "conservative"
+  // buys them reads the answer next to the word.
+  const mode = (m: ScheduleMode) => `${m} — ${modeLabel(m, c.quota.conservativeMaxSize)}`;
   const windows =
-    c.schedule.windows.map((w) => `${w.start}-${w.end} ${w.mode}`).join(" · ") || "(no windows)";
+    c.schedule.windows.map((w) => `${w.start}-${w.end} ${mode(w.mode)}`).join(" · ")
+    || "(no windows)";
   const presence = c.presence.enabled
     ? [
         `on · idle < ${c.presence.idleThresholdMin}min = present → every window capped at ${c.presence.whenPresent}`,
@@ -35,7 +40,7 @@ function sectionsOf(c: Config): Section[] {
     : "burn-down off";
 
   return [
-    { label: "🕐 schedule", lines: [windows, `outside every window: ${c.schedule.defaultMode}`] },
+    { label: "🕐 schedule", lines: [windows, `outside every window: ${mode(c.schedule.defaultMode)}`] },
     { label: "🧍 presence", lines: presence },
     {
       label: "🚦 dispatch",
@@ -49,7 +54,7 @@ function sectionsOf(c: Config): Section[] {
       lines: [
         `session cap: full ×${c.quota.fractionFull} / conservative ×${c.quota.fractionConservative} · week ×${c.quota.weekFraction}`,
         burn,
-        `ccusage fallback: block ${M(c.quota.blockBudgetTokens)} · week ${M(c.quota.weekBudgetTokens)} · S/M/L ${M(c.quota.sizeEstimateTokens.S)}/${M(c.quota.sizeEstimateTokens.M)}/${M(c.quota.sizeEstimateTokens.L)} · cons max ${c.quota.conservativeMaxSize}`,
+        `ccusage fallback: block ${M(c.quota.blockBudgetTokens)} · week ${M(c.quota.weekBudgetTokens)} · S/M/L ${M(c.quota.sizeEstimateTokens.S)}/${M(c.quota.sizeEstimateTokens.M)}/${M(c.quota.sizeEstimateTokens.L)}`,
       ],
     },
     {

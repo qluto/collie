@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { computeForecast, forecastLine, type Forecast } from "../src/quota/forecast.ts";
+import { computeForecast, forecastLine, modeLabel, type Forecast } from "../src/quota/forecast.ts";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import type { LimitSnapshot } from "../src/quota/limits-api.ts";
 
@@ -126,5 +126,24 @@ describe("forecastLine", () => {
     expect(line).toMatch(/^session 42% · resets \d\d:\d\d \(\+3h10m\) · headroom 43% ≈5 tasks$/);
     expect(forecastLine({ ...base, resetsAt, minToReset: 45 }, 0, 90)).toContain("(+45m)");
     expect(forecastLine({ ...base, resetsAt, minToReset: 120 }, 0, 90)).toContain("(+2h)");
+  });
+});
+
+describe("modeLabel", () => {
+  // "full"/"conservative"/"paused" name the lever, never what it does, and
+  // abbreviated into a header ("cons") they say nothing at all. The size is the
+  // one thing the mode decides, and it is the one thing the new-task form
+  // already made the human answer.
+  test("names what the mode will pick up, in the sizes the form asks for", () => {
+    expect(modeLabel("full", "M")).toBe("any size");
+    expect(modeLabel("conservative", "M")).toBe("up to M");
+    expect(modeLabel("paused", "M")).toBe("paused");
+  });
+
+  test("the cap is read from config, not assumed to be M", () => {
+    expect(modeLabel("conservative", "S")).toBe("up to S");
+    // a conservative window capped at L admits every size too, but says so in
+    // its own terms rather than borrowing full's words
+    expect(modeLabel("conservative", "L")).toBe("up to L");
   });
 });

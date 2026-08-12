@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import React from "react";
 import { render } from "ink-testing-library";
-import { AnswerForm, Harvest, harvestList } from "../src/views/harvest.tsx";
+import { AnswerForm, TaskList, orderedTasks } from "../src/views/tasks.tsx";
 import type { Task } from "@collie/core";
 
 const task = (over: Partial<Task>): Task => ({
@@ -26,17 +26,16 @@ const task = (over: Partial<Task>): Task => ({
 const noDiff = () => null;
 const noQuestion = () => null;
 
-describe("Harvest", () => {
+describe("TaskList", () => {
   test("groups review / asking / failed with counts and their evidence", () => {
     const tasks = [
       task({ id: "t-1", status: "review", title: "ship the parser", run: { resultSummary: "parser rewritten" } }),
       task({ id: "t-2", status: "review", title: "second review" }),
       task({ id: "t-3", status: "blocked", title: "waiting one", run: { question: "which migration?" } }),
       task({ id: "t-4", status: "failed", title: "broken one", attempts: 2, run: { failureReason: "spawn_timeout" } }),
-      task({ id: "t-5", status: "running", title: "still going" }),
     ];
     const { lastFrame } = render(
-      <Harvest tasks={tasks} focusIdx={0} columns={80} rows={24}
+      <TaskList tasks={tasks} focusIdx={0} columns={80} rows={24}
         diffFor={(t) => (t.id === "t-1" ? "2 commits · 3 files +120 −8" : null)} questionFor={noQuestion} />,
     );
     const frame = lastFrame()!;
@@ -47,7 +46,37 @@ describe("Harvest", () => {
     expect(frame).toContain("2 commits · 3 files +120 −8");
     expect(frame).toContain("which migration?");
     expect(frame).toContain("spawn_timeout · 2/2");
-    expect(frame).not.toContain("still going"); // running is not harvest
+  });
+
+  // What the Board tab used to be for. The two groups that want no decision sit
+  // below the three that do, and carry their own keys in the header.
+  test("running and queued follow the decisions, with the keys that act on them", () => {
+    const now = Date.parse("2026-08-11T03:00:00Z");
+    const tasks = [
+      task({ id: "t-1", status: "review", title: "reviewed one" }),
+      task({ id: "t-2", status: "running", title: "still going", repo: "/Users/q/dev/collie",
+        run: { lastHeartbeatAt: "2026-08-11T02:53:00Z" } }),
+      task({ id: "t-3", status: "queued", title: "tonight's work", priority: 50, size: "L" }),
+    ];
+    const { lastFrame } = render(
+      <TaskList tasks={tasks} focusIdx={0} columns={80} rows={24} diffFor={noDiff}
+        questionFor={noQuestion} now={now} />,
+    );
+    const frame = lastFrame()!;
+    expect(frame).toContain("🏃 Running  1 · J jump · x cancel");
+    expect(frame).toContain("⏳ Queued  1 · e edit · [ ] reorder · x delete");
+    expect(frame).toContain("p100 · M · collie · ●7m"); // priority, size, repo, heartbeat age
+    expect(frame).toContain("p50 · L · repo");
+    expect(frame.indexOf("reviewed one")).toBeLessThan(frame.indexOf("still going"));
+    expect(frame.indexOf("still going")).toBeLessThan(frame.indexOf("tonight's work"));
+  });
+
+  test("a running task with no heartbeat yet says so rather than lying about its age", () => {
+    const { lastFrame } = render(
+      <TaskList tasks={[task({ id: "t-1", status: "running", title: "just spawned" })]} focusIdx={0}
+        columns={80} rows={24} diffFor={noDiff} questionFor={noQuestion} />,
+    );
+    expect(lastFrame()!).toContain("· ⋯");
   });
 
   test("a scraped pane wins over the hook's generic question", () => {
@@ -58,7 +87,7 @@ describe("Harvest", () => {
       }),
     ];
     const { lastFrame } = render(
-      <Harvest tasks={tasks} focusIdx={0} columns={80} rows={24} diffFor={noDiff}
+      <TaskList tasks={tasks} focusIdx={0} columns={80} rows={24} diffFor={noDiff}
         questionFor={() => "─────────\nShall I drop the legacy column?"} />,
     );
     const frame = lastFrame()!;
@@ -73,7 +102,7 @@ describe("Harvest", () => {
       task({ id: "t-2", status: "review", title: "second" }),
     ];
     const { lastFrame } = render(
-      <Harvest tasks={tasks} focusIdx={1} columns={80} rows={24} diffFor={noDiff} questionFor={noQuestion} />,
+      <TaskList tasks={tasks} focusIdx={1} columns={80} rows={24} diffFor={noDiff} questionFor={noQuestion} />,
     );
     expect(lastFrame()!).toMatch(/▸ second/);
     expect(lastFrame()!).not.toMatch(/▸ first/);
@@ -86,7 +115,7 @@ describe("Harvest", () => {
     );
     for (const rows of [12, 8, 20]) {
       const { lastFrame } = render(
-        <Harvest tasks={many} focusIdx={0} columns={80} rows={rows}
+        <TaskList tasks={many} focusIdx={0} columns={80} rows={rows}
           diffFor={() => "1 commit · 1 file +2 −0"} questionFor={noQuestion} />,
       );
       const frame = lastFrame()!;
@@ -100,7 +129,7 @@ describe("Harvest", () => {
       task({ id: `t${i}`, status: "review", title: `task ${i}` }),
     );
     const { lastFrame } = render(
-      <Harvest tasks={many} focusIdx={9} columns={80} rows={10} diffFor={noDiff} questionFor={noQuestion} />,
+      <TaskList tasks={many} focusIdx={9} columns={80} rows={10} diffFor={noDiff} questionFor={noQuestion} />,
     );
     expect(lastFrame()!).toContain("task 9");
   });
@@ -114,36 +143,38 @@ describe("Harvest", () => {
         run: { question: "このマイグレーションを実行してよいですか、それとも先にレビューが必要ですか" } }),
     ];
     const { lastFrame } = render(
-      <Harvest tasks={tasks} focusIdx={0} columns={44} rows={20} diffFor={noDiff} questionFor={noQuestion} />,
+      <TaskList tasks={tasks} focusIdx={0} columns={44} rows={20} diffFor={noDiff} questionFor={noQuestion} />,
     );
     for (const line of lastFrame()!.split("\n")) {
       expect(displayWidth(line.replace(/\[[0-9;]*m/g, ""))).toBeLessThanOrEqual(44);
     }
   });
 
+  // The list holds every status now, so an empty view means an empty collie —
+  // not "the queue is full but nothing finished", which is a card, not a state.
   test("empty state", () => {
     const { lastFrame } = render(
-      <Harvest tasks={[task({ status: "running" })]} focusIdx={0} columns={80} rows={24}
+      <TaskList tasks={[]} focusIdx={0} columns={80} rows={24}
         diffFor={noDiff} questionFor={noQuestion} />,
     );
-    expect(lastFrame()!).toContain("nothing to harvest");
+    expect(lastFrame()!).toContain("no tasks");
   });
 
-  test("groups are separated by a blank line when the harvest fits, never when it does not", () => {
+  test("groups are separated by a blank line when the list fits, never when it does not", () => {
     const tasks = [
       task({ id: "t-1", status: "review", title: "reviewed" }),
       task({ id: "t-2", status: "blocked", title: "asking", run: { question: "which?" } }),
       task({ id: "t-3", status: "failed", title: "broken", run: { failureReason: "spawn_timeout" } }),
     ];
     const roomy = render(
-      <Harvest tasks={tasks} focusIdx={0} columns={80} rows={24} diffFor={noDiff} questionFor={noQuestion} />,
+      <TaskList tasks={tasks} focusIdx={0} columns={80} rows={24} diffFor={noDiff} questionFor={noQuestion} />,
     ).lastFrame()!.split("\n");
     // one above each of the two later group headers, one above the footer
     expect(roomy.filter((l) => l.trim() === "").length).toBe(3);
     expect(roomy[0]!.trim()).not.toBe(""); // the view never opens on a blank row
 
     const tight = render(
-      <Harvest tasks={tasks} focusIdx={0} columns={80} rows={9} diffFor={noDiff} questionFor={noQuestion} />,
+      <TaskList tasks={tasks} focusIdx={0} columns={80} rows={9} diffFor={noDiff} questionFor={noQuestion} />,
     ).lastFrame()!.split("\n");
     expect(tight.filter((l) => l.trim() === "").length).toBe(0);
     expect(tight.length).toBeLessThanOrEqual(9);
@@ -151,7 +182,7 @@ describe("Harvest", () => {
 
   test("folded, the archive is one line: a count and the key that opens it", () => {
     const { lastFrame } = render(
-      <Harvest tasks={[task({ id: "t-1", status: "review", title: "live one" })]} focusIdx={0}
+      <TaskList tasks={[task({ id: "t-1", status: "review", title: "live one" })]} focusIdx={0}
         columns={80} rows={24} diffFor={noDiff} questionFor={noQuestion}
         archived={[]} archivedTotal={42} archiveOpen={false} />,
     );
@@ -166,7 +197,7 @@ describe("Harvest", () => {
         endedAt: "2026-08-11T02:04:00Z", run: { resultSummary: "not taken" } }),
     ];
     const { lastFrame } = render(
-      <Harvest tasks={[task({ id: "t-1", status: "failed", title: "broken one" })]} focusIdx={0}
+      <TaskList tasks={[task({ id: "t-1", status: "failed", title: "broken one" })]} focusIdx={0}
         columns={80} rows={24} diffFor={() => "1 commit · 11 files +621 −175"}
         questionFor={noQuestion} dropped={dropped} archived={[]} archivedTotal={3} />,
     );
@@ -181,18 +212,18 @@ describe("Harvest", () => {
 
   test("no dropped work, no dropped group", () => {
     const { lastFrame } = render(
-      <Harvest tasks={[task({ id: "t-1", status: "review", title: "live one" })]} focusIdx={0}
+      <TaskList tasks={[task({ id: "t-1", status: "review", title: "live one" })]} focusIdx={0}
         columns={80} rows={24} diffFor={noDiff} questionFor={noQuestion} dropped={[]} />,
     );
     expect(lastFrame()!).not.toContain("🗑");
   });
 
-  test("an empty archive gets no line at all — even with nothing to harvest", () => {
+  test("an empty archive gets no line at all — even with an empty list", () => {
     const { lastFrame } = render(
-      <Harvest tasks={[]} focusIdx={0} columns={80} rows={24} diffFor={noDiff}
+      <TaskList tasks={[]} focusIdx={0} columns={80} rows={24} diffFor={noDiff}
         questionFor={noQuestion} archived={[]} archivedTotal={0} archiveOpen={false} />,
     );
-    expect(lastFrame()!).toContain("nothing to harvest");
+    expect(lastFrame()!).toContain("no tasks");
     expect(lastFrame()!).not.toContain("📦");
   });
 
@@ -203,7 +234,7 @@ describe("Harvest", () => {
       task({ id: "d-2", status: "done", title: "quota burn-down", endedAt: "2026-08-09T23:50:00Z" }),
     ];
     const { lastFrame } = render(
-      <Harvest tasks={[]} focusIdx={0} columns={80} rows={24} diffFor={noDiff}
+      <TaskList tasks={[]} focusIdx={0} columns={80} rows={24} diffFor={noDiff}
         questionFor={noQuestion} archived={archived} archivedTotal={7} archiveOpen />,
     );
     const frame = lastFrame()!;
@@ -230,7 +261,7 @@ describe("Harvest", () => {
     );
     for (const rows of [24, 12, 6]) {
       const { lastFrame } = render(
-        <Harvest tasks={live} focusIdx={0} columns={80} rows={rows} diffFor={noDiff}
+        <TaskList tasks={live} focusIdx={0} columns={80} rows={rows} diffFor={noDiff}
           questionFor={noQuestion} archived={archived} archivedTotal={20} archiveOpen />,
       );
       expect(lastFrame()!.split("\n").length).toBeLessThanOrEqual(rows);
@@ -243,7 +274,7 @@ describe("Harvest", () => {
     );
     for (const rows of [24, 10, 5]) {
       const { lastFrame } = render(
-        <Harvest tasks={live} focusIdx={0} columns={80} rows={rows} diffFor={noDiff}
+        <TaskList tasks={live} focusIdx={0} columns={80} rows={rows} diffFor={noDiff}
           questionFor={noQuestion} archived={[]} archivedTotal={9} archiveOpen={false} />,
       );
       const frame = lastFrame()!;
@@ -254,7 +285,7 @@ describe("Harvest", () => {
 
   test("footer names the one-key actions", () => {
     const { lastFrame } = render(
-      <Harvest tasks={[task({ id: "t-1", status: "review" })]} focusIdx={0} columns={80} rows={24}
+      <TaskList tasks={[task({ id: "t-1", status: "review" })]} focusIdx={0} columns={80} rows={24}
         diffFor={noDiff} questionFor={noQuestion} />,
     );
     expect(lastFrame()!)
@@ -280,8 +311,10 @@ describe("AnswerForm", () => {
   });
 });
 
-describe("harvestList", () => {
-  test("orders review, then blocked, then failed; other statuses drop out", () => {
+describe("orderedTasks", () => {
+  // The navigation order IS the render order: app.tsx indexes this list with
+  // the same cursor the view draws, so a group that moves here moves there.
+  test("orders the decisions first, then the work in flight; done drops out", () => {
     const tasks = [
       task({ id: "f1", status: "failed" }),
       task({ id: "b1", status: "blocked" }),
@@ -289,19 +322,20 @@ describe("harvestList", () => {
       task({ id: "d1", status: "done" }),
       task({ id: "q1", status: "queued" }),
       task({ id: "r2", status: "review" }),
+      task({ id: "n1", status: "running" }),
     ];
-    expect(harvestList(tasks).map((t) => t.id)).toEqual(["r1", "r2", "b1", "f1"]);
-    expect(harvestList([])).toEqual([]);
+    expect(orderedTasks(tasks).map((t) => t.id)).toEqual(["r1", "r2", "b1", "f1", "n1", "q1"]);
+    expect(orderedTasks([])).toEqual([]);
   });
 
   test("dropped then archived are appended last, and only via their arguments", () => {
     const live = [task({ id: "r1", status: "review" }), task({ id: "f1", status: "failed" })];
     const archived = [task({ id: "d1", status: "done" }), task({ id: "d2", status: "done" })];
     const dropped = [task({ id: "x1", status: "done" })];
-    expect(harvestList(live, { dropped, archived }).map((t) => t.id))
+    expect(orderedTasks(live, { dropped, archived }).map((t) => t.id))
       .toEqual(["r1", "f1", "x1", "d1", "d2"]);
     // a done task that somehow sits in the working set still drops out
-    expect(harvestList([...live, task({ id: "d3", status: "done" })]).map((t) => t.id))
+    expect(orderedTasks([...live, task({ id: "d3", status: "done" })]).map((t) => t.id))
       .toEqual(["r1", "f1"]);
   });
 });

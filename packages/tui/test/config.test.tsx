@@ -37,6 +37,16 @@ describe("ConfigView", () => {
     expect(frame).toContain("e edit in $EDITOR");
   });
 
+  // This tab is the only place the file's word and the header's word meet, so
+  // a reader who wondered what "conservative" buys them gets the answer here
+  // rather than having to hold two vocabularies.
+  test("each schedule mode is shown next to what it will actually pick up", () => {
+    const frame = frameOf(100, 30);
+    expect(frame).toContain("00:00-07:00 full — any size");
+    expect(frame).toContain("outside every window: conservative — up to M");
+    expect(frame).not.toContain("cons max"); // the abbreviation this replaced
+  });
+
   test("values line up in one column, sections are separated when there is room", () => {
     const lines = bare(frameOf(100, 30));
     const starts: Array<[string, string]> = [

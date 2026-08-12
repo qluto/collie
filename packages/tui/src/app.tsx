@@ -6,17 +6,17 @@ import { spawnSync } from "node:child_process";
 import {
   DEFAULT_CONFIG, blockedUntil, cancelTask, computeForecast, configPath, createTask, diffSummary,
   discardTaskWork, discoverRepos, droppedTasks, forecastLine, formatClock, listArchived, loadConfig,
-  markDone, readLimits, refreshBranchScan, refreshLimits, resolveMode, retryTask, runsDir,
+  markDone, modeLabel, readLimits, refreshBranchScan, refreshLimits, resolveMode, retryTask, runsDir,
   stripPromptTemplate, taskFilePath, transition, updateTask,
 } from "@collie/core";
 import type { Config, LimitSnapshot, Task } from "@collie/core";
 import { useHubSnapshot, type HubSnapshot } from "./state.ts";
-import { Board, COLUMNS, NARROW_COLUMNS, columnTasks } from "./views/board.tsx";
 import { Detail } from "./views/detail.tsx";
-import { AnswerForm, Harvest, harvestList } from "./views/harvest.tsx";
+import { AnswerForm, TaskList, orderedTasks } from "./views/tasks.tsx";
 import { NewTaskForm, type NewTaskDraft } from "./views/newTask.tsx";
 import { ConfigView } from "./views/config.tsx";
 import { KEYMAP } from "./keys.ts";
+import { reorderPlan } from "./queue.ts";
 import { displayWidth, truncateToWidth } from "./cursor.ts";
 import { focusPane } from "./jump.ts";
 import { openSession } from "./session.ts";
@@ -25,8 +25,16 @@ import {
   ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN, editFileInEditor, editInEditor, setRepaint,
 } from "./editor.ts";
 
-type Tab = "harvest" | "board" | "config";
-const TABS: Tab[] = ["harvest", "board", "config"];
+type Tab = "tasks" | "config";
+const TABS: Tab[] = ["tasks", "config"];
+
+/**
+ * Below this the tab bar drops the wordmark and the help hint. Sized for a
+ * phone terminal (herdr's own mobile layout kicks in around 64) — it used to be
+ * the width at which five kanban lanes stopped holding a title, which is a
+ * question one vertical list never has to answer.
+ */
+const NARROW_COLUMNS = 70;
 type Overlay =
   | { kind: "none" }
   | { kind: "help" }
@@ -37,7 +45,7 @@ type Overlay =
   | { kind: "confirm-discard"; taskId: string };
 
 /**
- * The harvest cards want a git shortstat and a scraped pane per task, both of
+ * The task cards want a git shortstat and a scraped pane per task, both of
  * which are far too expensive for the 2s snapshot poll (diffSummary is a
  * spawnSync). Cache on `id:rev` — a task that changed gets a fresh answer —
  * with a TTL for the work that happens outside the task file (commits landing
@@ -104,7 +112,10 @@ function forecastHeader(
 
   const segments: HeaderSegment[] = [
     alive
-      ? { text: `● ${mode === "conservative" ? "cons" : mode}`, color: mode === "paused" ? "yellow" : "green" }
+      ? {
+          text: `● ${modeLabel(mode, config.quota.conservativeMaxSize)}`,
+          color: mode === "paused" ? "yellow" : "green",
+        }
       : { text: "○ dead", color: "red" },
   ];
   const hardStop = blockedUntil(snap.quota);
@@ -129,13 +140,11 @@ function forecastHeader(
 
 function App(): React.JSX.Element {
   const { exit } = useApp();
-  const [tab, setTab] = useState<Tab>("harvest");
+  const [tab, setTab] = useState<Tab>("tasks");
   const [overlay, setOverlay] = useState<Overlay>({ kind: "none" });
   // pause background refresh while a text field owns the hardware cursor
   const [snap, refresh] = useHubSnapshot(overlay.kind === "new" || overlay.kind === "answer");
-  const [focusCol, setFocusCol] = useState(0); // start on Queued
-  const [focusRow, setFocusRow] = useState(0);
-  const [focusIdx, setFocusIdx] = useState(0); // harvest list cursor
+  const [focusIdx, setFocusIdx] = useState(0); // task list cursor
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [limits, setLimits] = useState<LimitSnapshot | null>(null);
   const [flash, setFlash] = useState("");
@@ -169,8 +178,8 @@ function App(): React.JSX.Element {
   }, []);
 
   // Done tasks live outside the snapshot on purpose: snap.tasks is the working
-  // set the board and the dispatcher reason about. Folded, this is one readdir
-  // per tick; only an open archive pays for parsing.
+  // set the list and the dispatcher reason about. Folded, this is one
+  // readdir per tick; only an open archive pays for parsing.
   const archive = useMemo(
     () => listArchived(archiveOpen ? ARCHIVE_LIMIT : 0),
     [snap.refreshedAt, archiveOpen],
@@ -195,8 +204,6 @@ function App(): React.JSX.Element {
     setTimeout(() => setFlash(""), 3000);
   };
 
-  const focusedTask = (): Task | undefined => columnTasks(snap.tasks, focusCol)[focusRow];
-
   const act = (fn: () => void) => {
     try {
       fn();
@@ -220,6 +227,18 @@ function App(): React.JSX.Element {
     void openSession(task)
       .then((paneId) => flashMsg(`resumed in ${paneId}`))
       .catch((err) => flashMsg(`resume failed: ${(err as Error).message}`));
+  };
+
+  /** Move a queued task one place; see reorderPlan for why it renumbers. */
+  const reorderQueued = (task: Task, earlier: boolean): boolean => {
+    const plan = reorderPlan(snap.tasks.filter((t) => t.status === "queued"), task.id, earlier);
+    if (!plan) return false;
+    for (const w of plan) {
+      updateTask(w.id, (t) => {
+        t.priority = w.priority;
+      });
+    }
+    return true;
   };
 
   const openPromptEditor = (task: Task) => {
@@ -321,14 +340,14 @@ function App(): React.JSX.Element {
     if (input === "q") exit();
     else if (input === "?") setOverlay({ kind: "help" });
     else if (input === "R") refresh();
-    else if (input === "1") setTab("harvest");
-    else if (input === "2") setTab("board");
-    else if (input === "3") setTab("config");
+    else if (input === "1") setTab("tasks");
+    else if (input === "2") setTab("config");
     else if (tab === "config" && input === "e") {
       if (editFileInEditor(configPath())) refresh();
-    } else if (tab === "harvest") {
-      const items = harvestList(snap.tasks, { dropped, archived: archive.tasks });
-      const task = items[Math.min(focusIdx, items.length - 1)];
+    } else if (tab === "tasks") {
+      const items = orderedTasks(snap.tasks, { dropped, archived: archive.tasks });
+      const idx = Math.min(focusIdx, items.length - 1);
+      const task = items[idx];
       const isDropped = !!task && dropped.some((d) => d.id === task.id);
       if (input === "A") {
         setArchiveOpen((v) => !v);
@@ -360,56 +379,33 @@ function App(): React.JSX.Element {
         else flashMsg("a answers a task blocked on a question");
       } else if (input === "r" && task && (task.status === "review" || task.status === "failed")) {
         act(() => retryTask(task.id, { source: "tui" }));
+      } else if (input === "e" && task) {
+        // A queued prompt is still editable; a started one is history.
+        if (task.status === "queued") openPromptEditor(task);
+        else flashMsg("e edits a queued task's prompt");
+      } else if ((input === "[" || input === "]") && task) {
+        // j/k are list movement everywhere in this TUI and J is the jump, so
+        // the queue's own axis gets brackets: earlier ← [ ] → later. The cursor
+        // follows the card it moved, or holding the key walks a different task
+        // every press.
+        const earlier = input === "[";
+        if (task.status === "queued") {
+          act(() => {
+            if (reorderQueued(task, earlier)) setFocusIdx(earlier ? Math.max(0, idx - 1) : idx + 1);
+          });
+        } else flashMsg("[ ] reorder a queued task");
       } else if (input === "x" && task) {
+        // One meaning — throw this away — and the confirm dialog spells out
+        // what that costs for the group the cursor is actually on.
         if (isDropped) setOverlay({ kind: "confirm-discard", taskId: task.id });
-        else flashMsg("x throws away a dropped task's branch");
+        else if (snap.tasks.some((t) => t.id === task.id)) {
+          setOverlay({ kind: "confirm-cancel", taskId: task.id });
+        } else flashMsg(`${task.id} is already done`);
       } else if (input === "u" && task) {
         // Back into the working set: the archived file walks out of the archive
         // (store.transition), so the task lands in ✅ Review with its pane info.
         if (isDropped) act(() => transition(task.id, "review", undefined, { source: "tui" }));
         else flashMsg("u reopens a dropped task");
-      }
-    } else if (tab === "board") {
-      const items = columnTasks(snap.tasks, focusCol);
-      const task = focusedTask();
-      if (input === "h" || key.leftArrow) {
-        setFocusCol((c) => Math.max(0, c - 1));
-        setFocusRow(0);
-      } else if (input === "l" || key.rightArrow) {
-        setFocusCol((c) => Math.min(COLUMNS.length - 1, c + 1));
-        setFocusRow(0);
-      } else if (input === "j" || key.downArrow) {
-        setFocusRow((r) => Math.min(Math.max(items.length - 1, 0), r + 1));
-      } else if (input === "k" || key.upArrow) {
-        setFocusRow((r) => Math.max(0, r - 1));
-      } else if (input === "n") {
-        setOverlay({ kind: "new" });
-      } else if (key.return && task) {
-        setOverlay({ kind: "detail", taskId: task.id });
-      } else if (input === "e" && task && task.status === "queued") {
-        openPromptEditor(task);
-      } else if (input === "d" && task?.status === "review") {
-        act(() => transition(task.id, "done", undefined, { source: "tui" }));
-      } else if (input === "r" && task && (task.status === "review" || task.status === "failed")) {
-        act(() => retryTask(task.id, { source: "tui" }));
-      } else if (input === "x" && task) {
-        setOverlay({ kind: "confirm-cancel", taskId: task.id });
-      } else if ((input === "J" || input === "K") && task?.status === "queued") {
-        act(() => {
-          const queued = columnTasks(snap.tasks, 0);
-          const idx = queued.findIndex((t) => t.id === task.id);
-          const swapWith = queued[input === "J" ? idx + 1 : idx - 1];
-          if (!swapWith) return;
-          const a = task.priority;
-          const b = swapWith.priority;
-          updateTask(task.id, (t) => {
-            t.priority = a === b ? b + (input === "J" ? 1 : -1) : b;
-          });
-          if (a !== b) updateTask(swapWith.id, (t) => {
-            t.priority = a;
-          });
-          setFocusRow((r) => (input === "J" ? r + 1 : Math.max(0, r - 1)));
-        });
       }
     }
   });
@@ -434,7 +430,7 @@ function App(): React.JSX.Element {
   return (
     <Box flexDirection="column" height={rows}>
       {/* the wordmark and the help hint are the first things to go on a phone —
-          a wrapped header would eat a row the stacked board budgeted for */}
+          a wrapped header would eat a row the list below budgeted for */}
       <Box gap={narrow ? 1 : 2}>
         {!narrow && <Text>🐑🐑🐕</Text>}
         {TABS.map((t, i) => (
@@ -494,8 +490,8 @@ function App(): React.JSX.Element {
             </Text>
           ))}
         </Box>
-      ) : tab === "harvest" ? (
-        <Harvest
+      ) : tab === "tasks" ? (
+        <TaskList
           tasks={snap.tasks}
           focusIdx={focusIdx}
           columns={columns}
@@ -506,9 +502,8 @@ function App(): React.JSX.Element {
           archived={archive.tasks}
           archivedTotal={archive.total}
           archiveOpen={archiveOpen}
+          now={snap.refreshedAt}
         />
-      ) : tab === "board" ? (
-        <Board tasks={snap.tasks} focusCol={focusCol} focusRow={focusRow} now={snap.refreshedAt} columns={columns} rows={bodyRows} />
       ) : (
         <ConfigView columns={columns} rows={bodyRows} />
       )}

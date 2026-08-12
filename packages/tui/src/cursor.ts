@@ -112,8 +112,8 @@ export function padToWidth(s: string, cells: number): string {
 
 /**
  * Truncate to a cell budget, appending "…" when it doesn't fit. Ink's own
- * wrap="truncate" miscounts CJK by a cell and pushes the column border off
- * the row, so every board string goes through this instead.
+ * wrap="truncate" miscounts CJK by a cell and pushes the line past the pane
+ * width, so every string the views draw goes through this instead.
  */
 export function truncateToWidth(s: string, cells: number): string {
   if (cells <= 0) return "";
