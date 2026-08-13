@@ -1,197 +1,156 @@
 # collie 🐑🐑🐕
 
 An unattended-work box for Claude Code sessions, orchestrated through
-[Herdr](https://herdr.dev) — the herder's sheepdog. Toss coding tasks in by
-day; a dispatcher burns your leftover token quota on them at night (presence ×
-real limit percentages × burn-down near the session reset); harvest the
-results in the morning — approve, answer the questions your agents got stuck
-on, retry the failures.
+[Herdr](https://herdr.dev) — the herder's sheepdog.
 
-## クイックスタート（日本語）
+Toss coding tasks in by day. A dispatcher spends your leftover token quota on
+them at night, while you are not at the keyboard. Collect the results in the
+morning: approve what landed, answer the questions your agents got stuck on,
+retry the failures.
 
-```sh
-# 1. 依存関係と CLI
-bun install
-# ~/.local/bin に collie シムを置く（または bun link）
-printf '#!/bin/sh\nexec %s %s "$@"\n' "$(which bun)" "$PWD/packages/cli/src/index.ts" \
-  > ~/.local/bin/collie && chmod +x ~/.local/bin/collie
+*[日本語版 README](README_ja.md)*
 
-# 2. 環境チェック（herdr ソケット / claude / ccusage）
-collie doctor
+---
 
-# 3. タスクを積む（--prompt を省略すると $EDITOR が開く）
-collie task add --repo ~/dev/projects/myapp --title "flaky テストを直す"
+## What it does
 
-# 4. ディスパッチャを常駐させる（launchd）
-collie dispatcher install
+Putting a task into collie is a declaration: **this runs without me.** That one
+idea shapes everything below.
 
-# 5. TUI — タスク一覧（Herdr のペイン内で開くのがおすすめ）
-collie tui
-```
+### The daily loop
 
-タスクは `~/.collie/tasks/*.md`（YAML frontmatter + 本文=プロンプト）。
-`~/.collie/config.toml` で WIP 制限・深夜ウィンドウ・トークン予算を調整します。
-`[repos] roots = ["~/dev/projects", "~/ghq/github.com"]` を設定すると、TUI の
-新規タスクフォームでリポジトリを一覧から選べます（2階層まで探索するので
-ghq 形式の org 階層にも対応。入力でフィルタ、↑↓で選択、自由入力も可）。
-既定では 00:00–07:00 が full モード（サイズ不問）、それ以外は conservative
-（`conservative_max_size` 以下＝既定では M まで、予算も 35% まで）です。モード名は
-設定ファイルの語ですが、画面のヘッダーには**何を拾うか**が出ます — `● any size` /
-`● up to M` / `● paused`。Config タブは両方を並べて表示する唯一の場所です
-（`00:00-07:00 full — any size`）。
-
-**1日のサイクル**: collie に入れる = 「私がいなくてもいい」と宣言したこと。
-昼に投函（repo・タイトル・サイズの3問、10秒）→ 夜に自動投入（presence × クォータ
-残量で判断、reset 間際は burn-down で余り予算を使い切る）→ 朝に回収（Tasks
-画面で承認・質問への返答・retry）。タスクの軸は `size`（S/M/L = トークン消費の
-見積もり）と `priority`（キューの並び順のみ）の2つだけです。
-
-**repo は登録時に検証されます**: 存在する／ディレクトリである／git チェックアウトで
-ある（worktree の `.git` はファイルですが、これも有効）。`createTask` は全入口
-（CLI・TUI・popup・Linear 取り込み）の合流点なので、ここを通らないタスクはありません。
-フォームは repo 欄から**先に進めません**し、`task add` は `$EDITOR` を開く前に止まります
-— 深夜2時に `worktree.create` が失敗して attempts を使い切り、翌朝それを知る、を避ける
-ためです。Linear 取り込みでは同じ検査が理由付きの skip になります。
-
-**burn-down**: セッション予算は reset で消滅するので、`[quota.burn_down]`
-（既定 on）により reset まで `window_min` 分を切った full ウィンドウでは cap が
-`fraction`（既定 0.95）まで緩みます。ヘッダーに `⌛ burn-down` と表示されます。
-
-**presence**（既定 off）: `[presence] enabled = true` にすると macOS の入力アイドル
-時間がゲート信号になります。人がマシンの前にいる間はモードが `when_present`（既定
-`paused`）で頭打ちになります。これは full ウィンドウだけでなく**すべてのウィンドウ
-に効く上限**です（full だけを降格していた頃は、日中の conservative なウィンドウでは
-presence が何もせず、目の前で作業中のユーザーにタスクが投入されていました）。
-`absent_upgrade = true` なら長時間不在のマシンはウィンドウ外でも full に昇格します
-（paused は決して昇格しません）。上限が効かなかった場合も
-`presence: human at keyboard (already conservative)` と decision に残るので、
-「on なのに何もしていない」状態が off と見分けられます。
-
-**パーミッションモード**: 既定は `auto`（claude 自身の既定でもある）。分類器が
-低リスクなツール呼び出しだけを実行し、危険なものはブロックするので無人実行に向い
-ています。`bypassPermissions` は起動時に確認ダイアログが出ますが**ディスパッチャは
-これを自動確認しません**（フォルダ信頼ダイアログとは違い、意図的なゲートなので）。
-無人で走らせるタスクに指定するとダイアログの前で固まります。
-
-**レビューして done にする**: review 列のタスクは人間が中身を見るまで done になりません。
-TUI の `d` のほかに、**エージェントのペインに居たまま** done にできます:
-
-```sh
-!collie done          # claude の入力欄で。! はモデルのターンを使わずシェル実行
-```
-
-herdr のキーバインドからも呼べます（`~/.config/herdr/config.toml`）。フォーカス中の
-ペインからタスクを逆引きするので、TUI に戻る必要がありません:
-
-```toml
-[[keys.command]]
-key = "prefix+d"
-type = "shell"
-command = "~/.local/bin/collie done"   # 絶対パスで書くこと
-```
-
-`type = "shell"` は detached 実行で標準出力が誰にも見えないため、結果は herdr の
-通知で返します（`[ui.toast] delivery` が `off` だと通知自体が出ないので注意）。
-確実な合図としてペイン名も `✓ <task id>` に変わります。押し間違いに強いよう冪等
-（done 済みなら何もしない）で、まだ running のタスクは review を経由して done に
-します（ペインを見ている人間のほうが完了コールバックより情報を持っているため）。
-
-**後片付け**: `collie done --close` を付けると、そのタスクの店じまいまでやります。
-
-| | 動作 |
+| | |
 |---|---|
-| worktree タスク | `worktree.remove` — チェックアウト削除・ペイン/ワークスペース自動クローズ・**ブランチは温存** |
-| worktree なし | ペインを閉じるだけ |
-| 未コミットあり | 何もせず件数を報告（herdr 自身も dirty な worktree を拒否する） |
+| **Day** | Toss a task in — three questions (repo, title, size), then `$EDITOR` for the prompt. Ten seconds. |
+| **Night** | The dispatcher picks tasks off the queue when the schedule, your absence and the remaining quota all agree. |
+| **Morning** | Collect: approve, answer, retry. |
 
-`[done] close = true` で既定にできます（既定は `false`）。
+A task has exactly two axes, and they never mean the same thing:
 
-溜まったものは `collie gc` でまとめて片付きます。done/failed のタスクについて、
-クリーンな worktree チェックアウトを外し、**HEAD にマージ済みのブランチだけ**を
-削除します（`git branch -d` なので未マージは git 自身が拒否）。`--dry-run` あり。
+- **`size`** (S/M/L) — an estimate of token cost. It gates: a conservative
+  window will not pick up an oversized task.
+- **`priority`** — queue order, nothing else. It has no gating power at all.
+
+### Quota from the source, not from a guess
+
+The gate reads Anthropic's own consumption percentages — the numbers Claude
+Code shows in its `/usage` panel — from `GET /api/oauth/usage`, at most once
+every 10 minutes, cached to `$COLLIE_HOME/limits.json` so the dispatcher and
+the TUI share one call. `fraction_full` and `fraction_conservative` are caps on
+*those* percentages.
+
+It is an undocumented endpoint, so it is treated as best-effort: when it cannot
+be read, the gate falls back to ccusage's token estimates
+(`block_budget_tokens` and friends). Authentication is the Claude OAuth token
+in the macOS Keychain, which collie only ever **reads** — an expired token
+means "unavailable", never "re-authenticate", because refreshing would rotate
+your credentials.
+
+**Burn-down.** Session budget evaporates at the reset, so `[quota.burn_down]`
+(on by default) relaxes the cap to `fraction` (0.95) once a full window is
+within `window_min` of the reset. Unspent headroom was going to be lost anyway.
+The header shows `⌛ burn-down` while it applies.
+
+### Presence — not while you are here
+
+Off by default. With `[presence] enabled = true`, macOS input-idle time becomes
+a gate signal: while a human is at the machine the mode is capped at
+`when_present` (default `paused`).
+
+That cap applies to **every** window, not just full ones. When it capped only
+`full`, presence did nothing all day in a conservative window — which is
+exactly when there is a human to respect — and tasks were dispatched over the
+user's shoulder. `absent_upgrade = true` lets a long-idle machine run full
+outside its windows; `paused` never upgrades. A cap that does not bind still
+reports itself (`presence: human at keyboard (already conservative)`), so "on
+but doing nothing" is distinguishable from "off".
+
+### Isolation and review
+
+Each task runs in its own git worktree on its own `collie/<id>` branch, in its
+own Herdr pane. Nothing reaches `done` until a human has looked: a finished
+session lands in **review**, and you promote it.
+
+**Merging a branch IS the review.** A reviewed task whose branch is already
+contained in HEAD is promoted to done automatically. What remains in done with
+an *unmerged* branch is therefore work you looked at and dropped — the TUI
+shows it as `🗑 Dropped`, where you can discard the branch or reopen the task.
+Nothing is recorded on the task for this; it is re-derived from git on every
+scan, so merging a dropped task's branch a week later simply un-drops it.
+
+**A task's repo is checked when it is created**, not when it is dispatched: it
+must exist, be a directory, and be a git checkout. The capture form will not
+leave the repo field, and `task add` stops before opening `$EDITOR`. The
+alternative is finding out at 2am, when `worktree.create` fails, the attempts
+burn, and you learn about it the next morning.
+
+### Questions don't kill the night
+
+A task blocked on a question stops counting toward the WIP limit — it burns no
+tokens — so one stuck session cannot starve the queue. The hook's message plus
+a scrape of the pane land on the task, ready for the morning, and
+`asking_limit` keeps the pile from growing without bound.
+
+### Linear import (optional, off by default)
+
+Issues carrying a marker label become queued tasks. It is someone else's API,
+so it is polled in minutes (`poll_interval_min`, default 5), never on the 30s
+dispatch tick.
+
+**Which repo an issue is about is a chain, not a mapping** — one Linear
+workspace is not one repo, and often one *team* is not either:
+
+1. a repo label on the issue — a child of the Linear label **group** `repo`
+   (the API reports it as `name="myapp", parent="repo"`; the group name is
+   nowhere in the child's own name), or a flat `repo:myapp` label
+2. the issue's **project name** — the usual axis inside one team
+3. the **team key** — "everything else goes here"
+
+At each rung the name is looked up in `[linear.repos]` and then matched by
+directory name against the checkouts under `[repos] roots`. A Linear project
+named like its checkout therefore needs **no configuration at all**; the table
+is only for when the two names disagree. Every import reports which rung
+answered (`via project myapp`).
+
+Two deliberate asymmetries: a repo label that resolves to nothing **stops the
+chain** (it names a repo, and ignoring it would ship the work elsewhere while
+looking like it worked), while an unmapped project falls through to the team
+(a project is only how the board is organised).
+
+**An issue that is passed over always says why.** An issue labelled for collie
+that quietly never becomes a task is the failure worth an evening, so
+`collie linear sync --dry-run` prints the whole plan and writes nothing:
 
 ```
-✓ t-20260809-6b40  worktree removed; deleted merged branch collie/t-MERGED
-· t-20260809-eeaa  worktree removed; kept collie/t-AHEAD: not merged (1 commit(s) ahead of HEAD)
-1/2 cleaned
-```
-
-**クォータは実測値**: Anthropic 自身が持つ消費率（claude の `/usage` パネルと同じ
-数字）を `GET /api/oauth/usage` から10分に1度取得し、`$COLLIE_HOME/limits.json`
-にキャッシュしてディスパッチャと TUI で共有します。`fraction_full` /
-`fraction_conservative` はこのパーセンテージに対する上限として解釈されます。
-
-未公開エンドポイントなので取得できないこともあります。その場合は ccusage の
-トークン推定（`block_budget_tokens` ほか）に自動フォールバックします。認証は
-macOS Keychain にある claude の OAuth トークンを**読むだけ**で、期限切れなら
-「取得不可」として扱います（リフレッシュは認証情報のローテーションになるため
-行いません）。
-
-**Linear 連携**（既定 off）: ラベルの付いた issue を自動でタスクに回収します。
-外部システムなので `poll_interval_min`（既定5分）でポーリングし、30秒の dispatch
-tick には乗せません。
-
-```sh
-# API キーは config.toml ではなく Keychain（Config タブは設定ファイルを全文表示するため）
-security add-generic-password -s "collie-linear" -a "$USER" -w "lin_api_..."
-```
-
-```toml
-[linear]
-enabled = true
-label = "collie"             # このラベルが付いた open な issue を回収
-poll_interval_min = 5
-size = "M"                   # 取り込んだタスクのサイズ
-start_state = ""             # 取り込み時にこの状態へ移す（"" = そのチームの最初の started 状態）
-comment = true               # collie のタスクIDを issue にコメント
-
-[linear.repos]
-# 名前が食い違うときだけ書く（下記参照）
-"Mobile app" = "~/dev/projects/myapp"
-"ENG"        = "~/dev/projects/monorepo"   # 「それ以外は全部ここ」の既定
-```
-
-**どの repo の話かは「具体的なものから」の連鎖で決まります**。1つの Linear
-workspace はもちろん、1つの team ですら repo 1つとは限らないためです:
-
-1. issue の repo ラベル（個別の逃げ道）— Linear の**ラベルグループ** `repo` の子
-   （API 上は `name="myapp", parent="repo"`。子の名前にグループ名は入りません）、
-   またはフラットな `repo:myapp` ラベル
-2. issue の**プロジェクト名**（1チーム内での通常の軸）
-3. **チームキー**（「それ以外は全部ここ」）
-
-各段で、まず `[linear.repos]` を引き、無ければ **`[repos] roots` 配下のチェックアウトを
-ディレクトリ名で照合**します。つまり `myapp` という Linear プロジェクトと
-`~/dev/projects/myapp` があれば**設定は一行も要りません**。取り込み時に
-`(via project myapp)` のようにどの段で決まったかを必ず出します。
-
-非対称が2つあります: repo ラベルが解決できないときは**連鎖を止めます**（repo を
-名指しした指示なので、無視して別の repo に送るのは危険）。一方プロジェクトが未対応の
-場合はチーム既定に落ちます（プロジェクトはボードの整理軸にすぎないため）。
-
-どこにも当たらない issue は**回収せずスキップし、理由を必ず出します**（ラベルを
-付けたのに何も起きない、が一番困るため）。`collie linear sync --dry-run` で何が起きるか
-だけ確認できます:
-
-```
-would import  ENG-42  flaky ログインテストを直す  -> ~/dev/projects/myapp
+would import  ENG-42  fix the flaky login test  -> ~/dev/projects/myapp  (via project myapp)
 skip    ENG-43  state "In Progress" is already under way
-skip    OPS-7   no repo mapped for team OPS
+skip    OPS-7   no repo named OPS (repo/… label, project, team) — add it to [linear.repos] or rename to match a checkout
 1 would be imported, 2 skipped (dry run: nothing written)
 ```
 
-**Linear の状態は「取り込み時」ではなく「実行開始時」に動きます。** 取り込みは
-キューに入っただけで、presence・WIP・クォータ次第では一晩動かないこともあるため、
-その間 In Progress になっているのは盤面の嘘になるからです。ディスパッチャが
-`running` に遷移した直後に、issue を読み直した上で状態を移し、タスクIDと
-ブランチ名をコメントします（best-effort。失敗してもセッションは走り続け、警告だけ出ます）。
+**Linear's status moves when the work starts, not when it was collected.**
+Importing only means the issue reached the queue, where it may sit all evening
+behind presence, WIP or the quota gate; "In Progress" then would be the board
+telling a lie. The dispatcher moves it right after the task transitions to
+running — re-reading the issue first, since the import snapshot is hours old by
+then — and comments with the task id and branch name. All of it is
+best-effort: a failure is a warning on a session that keeps running.
 
-二重回収は2重に防いでいます: ローカルの台帳（`linear.json`）と、Linear 側の状態
-そのもの（実行済みの issue は started になり、started は回収対象外）。Linear の優先度は
-キュー順に反映されます（Urgent が先頭、未設定は Normal 扱い）。`collie linear status`
-で設定・キー・回収済み一覧を確認できます。
+Double collection is prevented twice over: a local ledger (`linear.json`) and
+Linear's own board (a task that has run left its issue in a started state, and
+started issues are not import candidates). Linear's priority becomes queue
+order (Urgent first; unset counts as Normal).
 
-## How it works
+### Permission modes
+
+The default is `auto`, which is Claude Code's own default: a classifier runs
+the tool calls it judges low-risk and blocks the rest — the right fit for
+unattended work. `bypassPermissions` shows a startup confirmation dialog that
+**the dispatcher does not auto-confirm** (unlike the folder-trust dialog, that
+one is a deliberate gate), so a task using it will wedge in front of the
+dialog.
+
+### How it works
 
 ```
 task .md files ──> dispatcher (launchd, 30s tick)
@@ -204,117 +163,316 @@ task .md files ──> dispatcher (launchd, 30s tick)
                       │
                 claude session ──hooks──> task file heartbeats / blocked / requeue
                       └── final action: `collie task complete <id> --summary …`
-                          → review column (a human promotes it to done)
+                          → review (a human promotes it to done)
 ```
 
 Key design decisions, learned the hard way:
 
-- **Completion = explicit CLI callback**, not Herdr's `done` status (cleared
-  when a human views the tab) and not the Stop hook (fires after every
-  response). A watchdog routes forgotten callbacks to review after
+- **Completion is an explicit CLI callback** — not Herdr's `done` status (which
+  clears when a human views the tab) and not the Stop hook (which fires after
+  every response). A watchdog routes forgotten callbacks to review after
   `idle_grace_min`, so nothing hangs silently.
-- **Prompt injection is a one-line pointer** to `runs/<id>/prompt.md` —
-  multiline pastes into the claude input box are a trap. The dispatcher
-  verifies the echo (whitespace-normalized, panes hard-wrap) before Enter.
-- **Startup dialogs**: claude's folder-trust dialog reads as `blocked`/
-  `unknown`; the dispatcher auto-confirms it (queueing a task for a repo IS
-  the trust decision) and only treats a live `idle` from `agent.get` as ready.
+- **Prompt injection is a one-line pointer** to `runs/<id>/prompt.md`;
+  multiline pastes into the Claude input box are a trap.
+- **Startup dialogs**: the folder-trust dialog reads as `blocked`/`unknown`,
+  and the dispatcher auto-confirms it — queueing a task for a repo *is* the
+  trust decision. Readiness is a live `interactive_ready` from `agent.get`,
+  never the screen-scraped status.
 - **No socket multiplexing**: Herdr error frames can lose the request id, so
-  the client does one request per connection, plus one dedicated subscribe
+  the client makes one request per connection, plus one dedicated subscribe
   connection per running pane.
 - **Sidebar reporting uses `pane.report_metadata` only** — reporting semantic
-  agent state would feed back into the `agent_status` the dispatcher itself
-  reads.
-- **Limit hits**: scraped from the pane (`You've hit your session limit ·
-  resets 3:45pm`); the printed reset time becomes a hard dispatch stop
-  (+ jitter) and the task requeues without burning an attempt.
-- **Questions don't kill the night**: a task blocked on a question stops
-  counting toward WIP (it burns no tokens); the hook message plus a scraped
-  pane tail land on the task, ready for the morning, and `asking_limit`
-  stops the pile from growing unbounded. One caveat: `a` sends literal text —
-  if the agent asked via an option menu, jump to the pane (`J`) instead.
+  agent state would feed back into the `agent_status` the dispatcher reads.
+- **Limit hits** are scraped from the pane (`You've hit your session limit ·
+  resets 3:45pm`); Claude's own printed reset time becomes a hard dispatch stop
+  (plus jitter) and the task requeues **without** burning an attempt.
 
-## TUI
+---
 
-`collie tui` は vim/htop と同じ全画面（オルタネートスクリーン）で動き、終了時に
-元のシェル画面を復元します。日本語 IME に対応：変換中テキストは入力欄のカーソル
-位置にインライン表示され、複数文字の一括確定でも文字が欠けません。
+## Setup
 
-タブは **Tasks** と **Config** の2枚だけ。Tasks はすべてのタスクを1本の縦リスト
-にまとめた画面で、人が処理する順に並びます — 決断を待つ ✅ Review（diff 要約つき）
-/ ❓ Asking（エージェントの質問をインライン表示）/ ❌ Failed、続いて何も要求しない
-🏃 Running（ハートビート付き）/ ⏳ Queued（優先度・サイズ・repo）、最後に
-🗑 Dropped と 📦 Done（`A` で開閉）。2行目のヘッダーには常に予算予報
-（`session 42% · resets 02:00 (+3h10m) · headroom 43% ≈5 tasks`）が出ます。
+### Requirements
 
-グループ固有の操作はそのグループのヘッダーに書いてあります
-（`⏳ Queued 3 · e edit · [ ] reorder · x delete`）。フッターは全体共通のキーだけ。
+- macOS (presence uses the IOKit HID idle timer; the dispatcher is a launchd
+  agent)
+- [Herdr](https://herdr.dev) running, with its socket at
+  `~/.config/herdr/herdr.sock`
+- [Bun](https://bun.sh)
+- Claude Code on `PATH`
 
-| キー | 動作 |
-|---|---|
-| `1` `2` | Tasks / Config タブ |
-| `j k` / 矢印 | カード移動 |
-| `n` | 新規タスク（repo → タイトル → サイズの3問 → $EDITOR でプロンプト） |
-| `d` | Review → Done 昇格（done はアーカイブへ移動） |
-| `a` | Asking のタスクに返答（そのペインに送信して再開） |
-| `r` | retry（Review / Failed、attempts リセット） |
-| `J` | そのタスクの Herdr ペインへジャンプ |
-| `o` | そのタスクの claude セッションを再開（`claude --resume`） |
-| `e` | プロンプト（または config）を $EDITOR で編集（queued のみ） |
-| `[` `]` | キュー順を前へ／後ろへ（queued のみ） |
-| `x` | queued は削除、実行中はキャンセル、Dropped はブランチ破棄（確認あり） |
-| `u` | Dropped を Review に戻す |
-| `A` | Done アーカイブの開閉 |
-| `Enter` / `Esc` | 詳細表示 / 戻る |
-| `g` | 詳細画面から、そのタスクの Herdr ペインへジャンプ |
-| `?` / `q` | ヘルプ / 終了 |
+### 1. Install
 
-以前は Queued / Running / Asking / Review / Failed の5レーンを持つ Board タブが
-別にありましたが、うち3レーンが Tasks と重複し、同じキーが両タブで別の意味
-（`J` = ジャンプ / 優先度下げ、`x` = ブランチ破棄 / キャンセル）を持っていたため、
-1本のリストに統合しました。縦1列なので横幅の狭い端末（moshi 経由のモバイル等）
-でも同じ表示のまま使えます。画面に入り切らない分は `… +N more` として明示されます
-（Ink はスクロールできないため、行数は明示的に配分しています）。
+```sh
+bun install
 
-## CLI
+# put a `collie` shim on PATH (or use `bun link`)
+printf '#!/bin/sh\nexec %s %s "$@"\n' "$(which bun)" "$PWD/packages/cli/src/index.ts" \
+  > ~/.local/bin/collie && chmod +x ~/.local/bin/collie
+```
+
+### 2. Check the environment
+
+```sh
+collie doctor
+```
+
+It verifies the data directory, the config file, the Herdr socket, the presence
+probe, Claude Code, ccusage, and the usage API.
+
+### 3. Configure
+
+`~/.collie/config.toml` is written with commented defaults on first run. The
+settings worth visiting first:
+
+```toml
+[[schedule.windows]]
+start = "00:00"
+end = "07:00"
+mode = "full"        # outside every window: conservative
+
+[repos]
+# scanned two levels deep, so both flat layouts and ghq host roots work
+roots = ["~/dev/projects", "~/ghq/github.com"]
+
+[presence]
+enabled = true       # nothing new starts while you are at the keyboard
+```
+
+`[repos] roots` feeds the new-task repo picker (type to filter, ↑↓ to select,
+free input still allowed) and the Linear importer's name matching.
+
+Mode names are the config file's vocabulary; the TUI header says what each mode
+will actually **pick up** — `● any size` / `● up to M` / `● paused`. The Config
+tab is the one place both appear side by side (`00:00-07:00 full — any size`).
+
+### 4. Run the dispatcher
+
+```sh
+collie dispatcher install     # launchd agent, starts immediately
+collie dispatcher status
+tail -f ~/.collie/logs/dispatcher.log
+```
+
+`collie dispatcher restart` picks up new code. Config edits need no restart —
+they are reloaded on the next tick.
+
+### 5. Optional: Linear
+
+The API key is read from the macOS Keychain, never from `config.toml` (the
+Config tab renders that file in full):
+
+```sh
+security add-generic-password -s "collie-linear" -a "$USER" -w "lin_api_..."
+```
+
+```toml
+[linear]
+enabled = true
+label = "collie"             # collect open issues carrying this label
+poll_interval_min = 5
+size = "M"                   # size every imported task gets
+start_state = ""             # "" = the team's first started state
+comment = true               # comment the collie task id back onto the issue
+repo_label_group = "repo"    # Linear label group whose child names the repo
+repo_label_prefix = "repo:"  # flat spelling, for workspaces without groups
+
+[linear.repos]
+# only needed where a Linear name and a checkout's directory name disagree
+"Mobile app" = "~/dev/projects/myapp"
+"ENG"        = "~/dev/projects/monorepo"   # the "everything else" default
+```
+
+Then check it without writing anything:
+
+```sh
+collie linear status
+collie linear sync --dry-run
+```
+
+Leaving the section out entirely is a complete configuration: collie makes no
+network calls to Linear and does not even read the Keychain.
+
+### 6. Optional: Herdr keybindings
+
+A capture popup and a one-key "done", so neither costs a trip back to the TUI:
+
+```toml
+# ~/.config/herdr/config.toml
+[[keys.command]]
+key = "prefix+t"
+type = "popup"                          # inherits the calling pane's cwd
+command = "~/.local/bin/collie new --popup"
+
+[[keys.command]]
+key = "prefix+d"
+type = "shell"
+command = "~/.local/bin/collie done"    # absolute path required
+```
+
+`type = "shell"` runs detached, so no stdout reaches anyone: results come back
+as a Herdr notification (nothing appears if `[ui.toast] delivery = "off"`) and,
+as a channel that needs no setting, the pane is renamed `✓ <task id>`.
+
+---
+
+## Using it
+
+### The TUI
+
+```sh
+collie tui
+```
+
+Full-screen (alternate screen, like vim or htop), restoring your shell on exit.
+IME-aware: preedit text appears inline at the input cursor, and multi-character
+commits do not drop characters.
+
+There are two tabs, **Tasks** and **Config**. Tasks is one vertical list of
+every task, in the order a human deals with it — the three groups that want a
+decision, then the two that want nothing, then what is settled:
 
 ```
-collie task add|list|show|queue|retry|cancel|done|complete|fail
-collie done [<id>] [--close]   # review -> done from the agent's own pane
-collie gc [--dry-run]          # finished tasks: worktrees + merged branches
-collie dispatcher run [--once] [--verbose] | status | install | restart | uninstall
-                          # restart: pick up new code (install re-renders the
-                          # plist and also restarts; restart just kickstarts)
+✅ Review  2                                    ← diff summary per card
+❓ Asking  1                                    ← the agent's question, inline
+❌ Failed  1
+🏃 Running  1 · J jump · x cancel               ← with a heartbeat
+⏳ Queued  3 · e edit · [ ] reorder · x delete  ← priority · size · repo
+🗑 Dropped  1 · x discard · u reopen
+📦 Done  42 · A to open
+```
+
+Colour is the whole signal: the coloured groups want you, the colourless ones
+do not. Group-specific keys ride in the group header; the footer stays the
+universal set. The second header line is always the budget forecast
+(`session 42% · resets 02:00 (+3h10m) · headroom 43% ≈5 tasks`).
+
+| Key | Action |
+|---|---|
+| `1` `2` | Tasks / Config tab |
+| `j k` / arrows | move the cursor |
+| `n` | new task (repo → title → size, then `$EDITOR` for the prompt) |
+| `d` | promote review → done (done moves to the archive) |
+| `a` | answer an asking task (typed into its pane, which resumes it) |
+| `r` | retry (review / failed; resets the attempt budget) |
+| `J` | jump to the task's Herdr pane |
+| `o` | reopen the task's Claude session (`claude --resume`) |
+| `e` | edit the prompt (or the config) in `$EDITOR` (queued only) |
+| `[` `]` | move a queued task earlier / later in the queue |
+| `x` | delete a queued task, cancel a live one, discard a dropped branch (confirmed) |
+| `u` | reopen a dropped task |
+| `A` | fold / unfold the done archive |
+| `Enter` / `Esc` | detail / back |
+| `g` | from the detail view, jump to the task's Herdr pane |
+| `?` / `q` | help / quit |
+
+Ink cannot scroll, so anything past the last row would simply be gone: the list
+budgets its rows explicitly and says what it dropped (`… +N more`). Being one
+vertical column, it works unchanged on a narrow terminal.
+
+One caveat on `a`: it sends literal text. If the agent asked via an option
+menu, jump to the pane (`J`) instead.
+
+### Finishing a task
+
+A task in review is yours to promote. Besides `d` in the TUI, you can finish it
+**from the agent's own pane**:
+
+```sh
+!collie done          # in Claude's input box; ! runs a shell command
+```
+
+It resolves the task from `$COLLIE_TASK_ID` or the focused Herdr pane, so it
+needs no id. It is idempotent (already done: nothing happens), and a task still
+running goes to done via review — the human looking at the pane knows more than
+the completion callback does.
+
+`collie done --close` also tears the task down:
+
+| | Behaviour |
+|---|---|
+| worktree task | `worktree.remove` — checkout deleted, pane and workspace closed, **branch kept** |
+| non-worktree task | the pane is closed |
+| uncommitted changes | nothing happens; the count is reported |
+
+`[done] close = true` makes that the default.
+
+### Cleaning up
+
+```sh
+collie gc [--dry-run] [--force]
+```
+
+For done and failed tasks, it removes clean worktree checkouts and deletes
+**only branches already merged into HEAD** (`git branch -d`, so git itself
+refuses unmerged work). Tracked changes stop it dead, `--force` included;
+untracked files only need `--force`.
+
+```
+✓ t-20260809-6b40  worktree removed; deleted merged branch collie/t-MERGED
+· t-20260809-eeaa  worktree removed; kept collie/t-AHEAD: not merged (1 commit(s) ahead of HEAD)
+1/2 cleaned
+```
+
+A task is only reported while something collectable survives — a branch a human
+already deleted drops out of the output instead of reappearing forever.
+
+### CLI reference
+
+```
+collie task add --repo <path> --title <t> [--size S|M|L] [--priority N]
+                [--no-worktree] [--permission-mode <m>] [--prompt <text>]
+collie task list [--status s1,s2] [--json]
+collie task show <id>
+collie task queue|retry|cancel|done <id>
+collie task complete <id> --summary "<text>"
+collie task fail <id> --reason "<text>" [--retryable]
+
+collie done [<id>] [--close]     # review -> done, from anywhere
+collie gc [--dry-run] [--force]
+
+collie dispatcher run [--once] [--verbose] | status
+collie dispatcher install | restart | uninstall      (launchd)
+
+collie linear sync [--dry-run] | status
+
+collie new [--popup]             # the capture form alone, for a popup binding
 collie tui
 collie doctor
-collie hook <name>        # internal: called by claude hooks
+collie hook <name>               # internal: called by the generated Claude hooks
 ```
+
+---
 
 ## Development
 
 ```sh
-bun test          # 152 tests: store concurrency + archive, herdr client
-                  # (fake socket), gate math incl. burn-down, presence,
-                  # forecast, schedule windows, reset parser, repo discovery,
-                  # git diff/worktree helpers, TUI render + display width
-bunx tsc --noEmit
+bun test           # 253 tests: store locking + archive, herdr client (fake
+                   # socket), quota gate incl. burn-down, presence, forecast,
+                   # schedule windows, reset parser, repo discovery, git
+                   # helpers, Linear plan + sync (fake API), TUI render
+bunx tsc --noEmit  # strict
 ```
 
-Contributor notes (wire quirks, invariants, testing conventions) live in
+Contributor notes — wire quirks, invariants, testing conventions — live in
 [CLAUDE.md](CLAUDE.md).
 
-Monorepo: `packages/core` (store, herdr client, quota), `packages/cli`
-(dispatcher, hooks, task commands), `packages/tui` (Ink: task list + config).
+Monorepo (bun workspaces): `packages/core` (store, Herdr client, quota,
+Linear), `packages/cli` (dispatcher, hooks, task commands), `packages/tui`
+(Ink: task list + config).
 
-Runtime data lives in `~/.collie/` (override with `COLLIE_HOME`).
-`COLLIE_DEBUG=1` logs raw socket frames; `COLLIE_CCUSAGE_BIN` overrides
-the usage estimator (used by tests).
+Runtime data lives in `~/.collie/`, overridable with `COLLIE_HOME` — set it to
+a temp directory for any experiment, since a real dispatcher runs against the
+default. `COLLIE_DEBUG=1` logs raw socket frames; `COLLIE_CCUSAGE_BIN` and
+`COLLIE_LINEAR_API_URL` point the usage estimator and the Linear client at
+fakes.
 
-## v1 limitations
+## Limitations
 
 - Cancel never kills panes (forensics-friendly; close them in Herdr).
 - Weekly quota is estimated as a rolling 7-day sum, not Anthropic's actual
   weekly reset boundary.
-- One dispatcher per machine; no task dependencies/DAGs; no auto-PR from
-  worktrees. `collie gc` deletes only branches already merged into the repo's
-  HEAD — merging is left to the human.
+- One dispatcher per machine; no task dependencies or DAGs; no auto-PR from
+  worktrees. `collie gc` deletes only branches already merged into HEAD —
+  merging is left to the human.
+- Nothing is written back to Linear when a task finishes; the issue is left in
+  its started state for a human to close.
