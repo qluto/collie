@@ -39,7 +39,17 @@ function fakeLinear(opts: { issues: any[]; states?: unknown[]; fail?: string }) 
       calls.push({ op, variables: body.variables });
       if (opts.fail) return Response.json({ errors: [{ message: opts.fail }] });
       if (op === "CollieIssues") {
-        return Response.json({ data: { viewer: { id: VIEWER }, issues: { nodes: opts.issues } } });
+        // the real query asks for both connections in one round trip: `mine`
+        // is filtered by assignee server-side, `all` is not
+        const onlyMine = body.variables.onlyMine === true;
+        const mine = opts.issues.filter((i: any) => i.assignee?.id === VIEWER);
+        return Response.json({
+          data: {
+            viewer: { id: VIEWER },
+            ...(onlyMine ? { mine: { nodes: mine } } : {}),
+            all: { nodes: opts.issues },
+          },
+        });
       }
       if (op === "CollieIssue") {
         const hit = opts.issues.find((i: any) => i.id === body.variables.id) ?? null;
@@ -202,6 +212,35 @@ describe("syncLinear", () => {
         "assigned to Sam",
         "unassigned — assign it to yourself for collie to pick it up",
       ]);
+    } finally {
+      fake.stop();
+    }
+  });
+
+  // Server-side, so a shared team board cannot crowd your own issues out of
+  // the fetch window — while the unassigned one is still SEEN, and reported.
+  test("your issues are asked for by name, not filtered out of a shared pile", async () => {
+    const fake = fakeLinear({
+      issues: [issue({ id: "theirs", assignee: { id: "user_sam", displayName: "Sam" } }), issue({ id: "mine" })],
+      states: STATES,
+    });
+    try {
+      await syncLinear(config(), { force: true });
+      const call = fake.calls.find((c) => c.op === "CollieIssues")!;
+      expect(call.variables.onlyMine).toBe(true);
+      expect(listTasks()).toHaveLength(1);
+      expect(listTasks()[0]!.origin!.id).toBe("mine");
+    } finally {
+      fake.stop();
+    }
+  });
+
+  test("assignee = any asks for the unfiltered list only", async () => {
+    const fake = fakeLinear({ issues: [issue({ assignee: null })], states: STATES });
+    try {
+      const res = await syncLinear(config({ assignee: "any" }), { force: true });
+      expect(fake.calls.find((c) => c.op === "CollieIssues")!.variables.onlyMine).toBe(false);
+      expect(res.created).toHaveLength(1);
     } finally {
       fake.stop();
     }

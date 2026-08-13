@@ -83,10 +83,11 @@ polled every `poll_interval_min` (default 5). A whole team can share one board
 and one label; assignment is what keeps two people's machines from racing for
 the same issue. `assignee = "any"` opts out.
 
-An issue that carries the label but is not yours is skipped with a reason
-(`assigned to Sam`, `unassigned — assign it to yourself…`), so the mistake
-everyone makes — labelling an issue and forgetting to assign it — is visible
-rather than silent.
+Your issues are asked for **by assignee**, so a busy shared board cannot crowd
+them out of the fetch. An issue that carries the label but is not yours is
+still listed, skipped with a reason (`assigned to Sam`, `unassigned — assign it
+to yourself…`), so the mistake everyone makes — labelling an issue and
+forgetting to assign it — is visible rather than silent.
 
 **Which repo an issue is about** is resolved most-specific-first:
 

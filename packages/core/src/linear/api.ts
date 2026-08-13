@@ -108,10 +108,29 @@ export async function graphql<T>(
 // issue still open". Everything else — including whether the state already
 // counts as started — is decided client-side in plan.ts, where it is testable
 // and does not depend on Linear's filter grammar staying put.
+//
+// Two aliased connections in ONE round trip (live-probed 2026-08-13):
+//   mine  — filtered by assignee server-side, so a shared team board cannot
+//           crowd your own issues out of the window. This is what gets run.
+//   all   — the same label, unfiltered by assignee, so an issue you labelled
+//           and forgot to assign is still SEEN and can be reported. Purely
+//           diagnostic: the planner skips everything in here that is not
+//           yours, with the reason.
 const ISSUES_QUERY = `
-query CollieIssues($label: String!, $first: Int!) {
+query CollieIssues($label: String!, $first: Int!, $onlyMine: Boolean!) {
   viewer { id }
-  issues(
+  mine: issues(
+    first: $first
+    filter: {
+      labels: { name: { eq: $label } }
+      completedAt: { null: true }
+      canceledAt: { null: true }
+      assignee: { isMe: { eq: true } }
+    }
+  ) @include(if: $onlyMine) {
+    nodes { ...CollieIssueFields }
+  }
+  all: issues(
     first: $first
     filter: {
       labels: { name: { eq: $label } }
@@ -119,22 +138,25 @@ query CollieIssues($label: String!, $first: Int!) {
       canceledAt: { null: true }
     }
   ) {
-    nodes {
-      id identifier title description url priority
-      team { id key }
-      state { id name type }
-      project { name }
-      assignee { id displayName }
-      labels { nodes { name parent { name } } }
-    }
+    nodes { ...CollieIssueFields }
   }
+}
+
+fragment CollieIssueFields on Issue {
+  id identifier title description url priority
+  team { id key }
+  state { id name type }
+  project { name }
+  assignee { id displayName }
+  labels { nodes { name parent { name } } }
 }`;
 
 export interface LabeledIssues {
+  /** yours first, then everything else that carries the label */
   issues: LinearIssue[];
   /** the API key's own user — who "assigned to me" means */
   viewerId?: string;
-  /** the window was full, so there may be more the planner never saw */
+  /** the window that decides what RUNS was full; there may be more of yours */
   truncated: boolean;
 }
 
@@ -148,13 +170,24 @@ export interface LabeledIssues {
 export async function fetchLabeledIssues(
   key: string,
   label: string,
-  first = 50,
+  opts: { onlyMine: boolean; first?: number },
 ): Promise<LabeledIssues> {
-  const data = await graphql<{ viewer?: { id?: string }; issues?: { nodes?: LinearIssue[] } }>(
-    key, ISSUES_QUERY, { label, first },
-  );
-  const issues = data.issues?.nodes ?? [];
-  return { issues, viewerId: data.viewer?.id, truncated: issues.length >= first };
+  const first = opts.first ?? 50;
+  const data = await graphql<{
+    viewer?: { id?: string };
+    mine?: { nodes?: LinearIssue[] };
+    all?: { nodes?: LinearIssue[] };
+  }>(key, ISSUES_QUERY, { label, first, onlyMine: opts.onlyMine });
+
+  const mine = data.mine?.nodes ?? [];
+  const all = data.all?.nodes ?? [];
+  const seen = new Set(mine.map((i) => i.id));
+  return {
+    issues: [...mine, ...all.filter((i) => !seen.has(i.id))],
+    viewerId: data.viewer?.id,
+    // What matters is the window the RUNNABLE set came out of.
+    truncated: (opts.onlyMine ? mine.length : all.length) >= first,
+  };
 }
 
 const ISSUE_QUERY = `

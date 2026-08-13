@@ -195,13 +195,16 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
 - **Only issues ASSIGNED to the API key's own user are collected**
   (`assignee = "me"`, the default; `"any"` opts out). A whole team can share
   one board and one marker label, and without this every machine would race for
-  every labelled issue. `viewer { id }` rides along in the issues query, so
-  knowing who "me" is costs no extra round trip. The filter is CLIENT-side on
-  purpose: labelling an issue and forgetting to assign it is the mistake people
-  actually make, and it has to be a skip with a reason rather than an issue
-  that silently never appears. The cost is that other people's issues occupy
-  the `first: 50` window, so a full window is reported as a warning instead of
-  passing for "that was all of them".
+  every labelled issue. The issues query asks for TWO aliased connections in
+  one round trip (live-probed 2026-08-13): `mine`, filtered server-side by
+  `assignee: { isMe: { eq: true } }`, is what actually runs — a shared team
+  board cannot crowd your own issues out of the `first: 50` window — and `all`,
+  the same label without the assignee filter, exists so an issue you labelled
+  and forgot to assign is still SEEN and skipped WITH A REASON rather than
+  silently absent, which is the failure this integration has been bitten by
+  twice. Collection is therefore exact; the diagnostic is best-effort (a very
+  large shared board can push a stranger's issue out of `all`). The truncation
+  warning tracks `mine`, the set that decides what runs.
 - **Which repo an issue is about is a CHAIN, not a mapping**: a repo label,
   then the project name, then the team key — and at each rung the name
   is looked up in `[linear.repos]` first, then matched by directory name

@@ -133,7 +133,7 @@ export async function syncLinear(
 
   let fetched: LabeledIssues;
   try {
-    fetched = await fetchLabeledIssues(key, linear.label);
+    fetched = await fetchLabeledIssues(key, linear.label, { onlyMine: linear.assignee === "me" });
   } catch (err) {
     // A reachability problem is not a reason to re-hammer on the next 30s
     // tick, so the clock advances even when the call failed.
@@ -164,7 +164,7 @@ export async function syncLinear(
   // A full window is not the same as "that was all of them", and a silent cap
   // reads exactly like an issue that was never labelled.
   if (fetched.truncated) {
-    warnings.push(`${issues.length} labelled issues returned — the poll window was full, so some may not have been seen`);
+    warnings.push("the poll window was full — some of your labelled issues may not have been seen");
   }
 
   for (const entry of entries) {
