@@ -392,3 +392,7 @@ Linear）、`packages/cli`（ディスパッチャ、フック、task コマン�
   マージ自体はあなたに委ねられています。
 - タスク完了時に Linear へ書き戻しは行いません。issue は started 状態のまま残るので、
   あなたが閉じてください。
+
+## ライセンス
+
+MIT — [LICENSE](LICENSE) を参照してください。

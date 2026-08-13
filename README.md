@@ -396,3 +396,7 @@ the default.
   merging is left to you.
 - Nothing is written back to Linear when a task finishes; the issue is left in
   its started state for you to close.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

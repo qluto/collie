@@ -1,5 +1,6 @@
 {
   "name": "collie-monorepo",
+  "license": "MIT",
   "private": true,
   "workspaces": [
     "packages/*"
