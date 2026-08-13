@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { parseConfig, loadConfig, DEFAULT_CONFIG_TOML, ConfigError } from "../src/config.ts";
+import { parseConfig, loadConfig, DEFAULT_CONFIG, DEFAULT_CONFIG_TOML, ConfigError } from "../src/config.ts";
 import { configPath, tasksDir } from "../src/paths.ts";
 
 describe("config", () => {
@@ -128,5 +128,23 @@ describe("first run", () => {
     // a file that predates a feature keeps working: the missing keys default
     expect(loadConfig().presence.enabled).toBe(false);
     expect(loadConfig().quota.burnDown.enabled).toBe(true);
+  });
+});
+
+// A config written before a feature existed never grows its section — every
+// key has to survive total absence. Linear is the newest section and the one
+// that reaches a third-party API, so "absent" must mean "off", not "default
+// something and start calling out".
+describe("a config that predates a feature", () => {
+  test("no [linear] section at all still parses, switched off", () => {
+    const c = parseConfig(`[dispatch]\nwip_limit = 2\n`);
+    expect(c.linear.enabled).toBe(false);
+    expect(c.linear.label).toBe(DEFAULT_CONFIG.linear.label);
+    expect(c.linear.repos).toEqual({});
+    expect(c.linear.pollIntervalMin).toBe(DEFAULT_CONFIG.linear.pollIntervalMin);
+  });
+
+  test("an empty file is the full defaults, not a crash", () => {
+    expect(parseConfig("")).toEqual(DEFAULT_CONFIG);
   });
 });

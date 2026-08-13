@@ -37,8 +37,15 @@ function runStatus(): number {
   console.log(`  last poll:    ${state.lastSyncAt ? new Date(state.lastSyncAt).toLocaleString() : "never"}`);
   console.log(`  imported:     ${imported.length}`);
   for (const e of imported.slice(-5)) console.log(`                ${e.ref} -> ${e.taskId}`);
-  if (!readApiKey()) setupHint();
-  return cfg.enabled && readApiKey() ? 0 : 1;
+  // Off by configuration is not a fault — collie is complete without Linear,
+  // and saying otherwise would make `linear status` fail on every machine that
+  // simply does not use it. Non-zero is reserved for "switched on and unable
+  // to work", the same rule `dispatcher status` follows.
+  if (cfg.enabled && !readApiKey()) {
+    setupHint();
+    return 1;
+  }
+  return 0;
 }
 
 async function runSync(argv: string[]): Promise<number> {
