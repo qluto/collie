@@ -78,8 +78,15 @@ pauses.
 
 ### Linear import (optional, off by default)
 
-Issues carrying a marker label become queued tasks, polled every
-`poll_interval_min` (default 5).
+Issues carrying a marker label **and assigned to you** become queued tasks,
+polled every `poll_interval_min` (default 5). A whole team can share one board
+and one label; assignment is what keeps two people's machines from racing for
+the same issue. `assignee = "any"` opts out.
+
+An issue that carries the label but is not yours is skipped with a reason
+(`assigned to Sam`, `unassigned — assign it to yourself…`), so the mistake
+everyone makes — labelling an issue and forgetting to assign it — is visible
+rather than silent.
 
 **Which repo an issue is about** is resolved most-specific-first:
 
@@ -201,6 +208,7 @@ security add-generic-password -s "collie-linear" -a "$USER" -w "lin_api_..."
 [linear]
 enabled = true
 label = "collie"             # collect open issues carrying this label
+assignee = "me"              # me|any — "me" keeps two people on one team apart
 poll_interval_min = 5
 size = "M"                   # size every imported task gets
 start_state = ""             # "" = the team's first started state

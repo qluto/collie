@@ -74,8 +74,14 @@ collie にタスクを入れるということは、**「これは私がいな�
 
 ### Linear 連携（任意・既定 off）
 
-マーカーラベルの付いた issue がキュー済みタスクになります。ポーリングは
-`poll_interval_min`（既定5分）ごとです。
+マーカーラベルが付き、**かつあなたにアサインされた** issue がキュー済みタスクに
+なります。ポーリングは `poll_interval_min`（既定5分）ごとです。1つのボードと1つの
+ラベルをチーム全員で共有できるので、同じ issue を複数人のマシンが取り合わないように
+するのがアサインの役割です。`assignee = "any"` で無効にできます。
+
+ラベルは付いているがあなたのものでない issue は理由付きでスキップされます
+（`assigned to Sam`、`unassigned — assign it to yourself…`）。誰もがやる
+「ラベルを付けてアサインを忘れる」が、黙って消えるのではなく見えるようになります。
 
 **どの repo の話かは**「具体的なものから」の順で決まります:
 
@@ -197,6 +203,7 @@ security add-generic-password -s "collie-linear" -a "$USER" -w "lin_api_..."
 [linear]
 enabled = true
 label = "collie"             # このラベルの付いた open な issue を回収
+assignee = "me"              # me|any — "me" が同一チーム内の取り合いを防ぐ
 poll_interval_min = 5
 size = "M"                   # 取り込んだタスクに付けるサイズ
 start_state = ""             # "" = そのチームの最初の started 状態

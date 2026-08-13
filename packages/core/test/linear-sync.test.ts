@@ -38,7 +38,9 @@ function fakeLinear(opts: { issues: any[]; states?: unknown[]; fail?: string }) 
       const op = /(?:query|mutation)\s+(\w+)/.exec(body.query)?.[1] ?? "";
       calls.push({ op, variables: body.variables });
       if (opts.fail) return Response.json({ errors: [{ message: opts.fail }] });
-      if (op === "CollieIssues") return Response.json({ data: { issues: { nodes: opts.issues } } });
+      if (op === "CollieIssues") {
+        return Response.json({ data: { viewer: { id: VIEWER }, issues: { nodes: opts.issues } } });
+      }
       if (op === "CollieIssue") {
         const hit = opts.issues.find((i: any) => i.id === body.variables.id) ?? null;
         return Response.json({ data: { issue: hit } });
@@ -55,6 +57,9 @@ function fakeLinear(opts: { issues: any[]; states?: unknown[]; fail?: string }) 
   return { calls, stop: () => server.stop(true) };
 }
 
+/** The API key's own user; issues must be assigned to it to be collected. */
+const VIEWER = "user_me";
+
 const issue = (over: Record<string, unknown> = {}) => ({
   id: "iss_1",
   identifier: "ENG-42",
@@ -64,6 +69,7 @@ const issue = (over: Record<string, unknown> = {}) => ({
   priority: 2,
   team: { id: "team_1", key: "ENG" },
   state: { id: "st_todo", name: "Todo", type: "unstarted" },
+  assignee: { id: VIEWER, displayName: "me" },
   ...over,
 });
 
@@ -172,6 +178,30 @@ describe("syncLinear", () => {
       expect(entry.action).toBe("skip");
       expect(entry.action === "skip" && entry.reason).toContain("/nowhere/at/all does not exist");
       expect(listTasks()).toEqual([]);
+    } finally {
+      fake.stop();
+    }
+  });
+
+  // The reason this exists: a team sharing one board and one label would
+  // otherwise have every machine racing for every labelled issue.
+  test("an issue that is not yours is skipped, and says whose it is", async () => {
+    const fake = fakeLinear({
+      issues: [
+        issue({ id: "mine" }),
+        issue({ id: "theirs", identifier: "ENG-9", assignee: { id: "user_sam", displayName: "Sam" } }),
+        issue({ id: "nobody", identifier: "ENG-8", assignee: null }),
+      ],
+      states: STATES,
+    });
+    try {
+      const res = await syncLinear(config(), { force: true });
+      expect(res.created).toHaveLength(1);
+      const reasons = res.entries.filter((e) => e.action === "skip").map((e) => (e as any).reason);
+      expect(reasons).toEqual([
+        "assigned to Sam",
+        "unassigned — assign it to yourself for collie to pick it up",
+      ]);
     } finally {
       fake.stop();
     }

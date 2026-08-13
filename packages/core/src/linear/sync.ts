@@ -7,7 +7,7 @@ import {
   LinearError, commentOnIssue, fetchIssue, fetchLabeledIssues, fetchWorkflowStates, moveIssueToState,
   readApiKey,
 } from "./api.ts";
-import type { LinearIssue } from "./api.ts";
+import type { LabeledIssues, LinearIssue } from "./api.ts";
 import { pickStartState, planImport, type PlanEntry } from "./plan.ts";
 
 /**
@@ -131,9 +131,9 @@ export async function syncLinear(
   const key = readApiKey();
   if (!key) return idle("no API key in the keychain (see `collie linear status`)");
 
-  let issues: LinearIssue[];
+  let fetched: LabeledIssues;
   try {
-    issues = await fetchLabeledIssues(key, linear.label);
+    fetched = await fetchLabeledIssues(key, linear.label);
   } catch (err) {
     // A reachability problem is not a reason to re-hammer on the next 30s
     // tick, so the clock advances even when the call failed.
@@ -147,6 +147,7 @@ export async function syncLinear(
   for (const t of listTasks()) {
     if (t.origin?.kind === "linear") seen.add(t.origin.id);
   }
+  const { issues, viewerId } = fetched;
 
   // The checkouts collie already knows about, from the same roots the new-task
   // picker uses: a Linear project named like its repo needs no mapping at all.
@@ -157,9 +158,14 @@ export async function syncLinear(
     // unreadable roots only cost the name-matching rung; [linear.repos] still works
   }
 
-  const entries = planImport(issues, linear, seen, known, repoProblem);
+  const entries = planImport(issues, linear, seen, known, repoProblem, viewerId);
   const created: string[] = [];
   const warnings: string[] = [];
+  // A full window is not the same as "that was all of them", and a silent cap
+  // reads exactly like an issue that was never labelled.
+  if (fetched.truncated) {
+    warnings.push(`${issues.length} labelled issues returned — the poll window was full, so some may not have been seen`);
+  }
 
   for (const entry of entries) {
     if (entry.action !== "import") continue;

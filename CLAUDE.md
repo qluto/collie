@@ -192,6 +192,16 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
   pin, so nothing that *decides* anything is allowed to live behind it. Only
   `completedAt`/`canceledAt` are filtered server-side; "is this state already
   under way" is decided client-side, where it is tested.
+- **Only issues ASSIGNED to the API key's own user are collected**
+  (`assignee = "me"`, the default; `"any"` opts out). A whole team can share
+  one board and one marker label, and without this every machine would race for
+  every labelled issue. `viewer { id }` rides along in the issues query, so
+  knowing who "me" is costs no extra round trip. The filter is CLIENT-side on
+  purpose: labelling an issue and forgetting to assign it is the mistake people
+  actually make, and it has to be a skip with a reason rather than an issue
+  that silently never appears. The cost is that other people's issues occupy
+  the `first: 50` window, so a full window is reported as a warning instead of
+  passing for "that was all of them".
 - **Which repo an issue is about is a CHAIN, not a mapping**: a repo label,
   then the project name, then the team key — and at each rung the name
   is looked up in `[linear.repos]` first, then matched by directory name

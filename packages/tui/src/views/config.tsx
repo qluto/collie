@@ -68,7 +68,7 @@ function sectionsOf(c: Config): Section[] {
       label: "🔗 linear",
       lines: c.linear.enabled
         ? [
-            `label "${c.linear.label}" · every ${c.linear.pollIntervalMin}min · size ${c.linear.size}`,
+            `label "${c.linear.label}" · ${c.linear.assignee === "me" ? "assigned to you" : "any assignee"} · every ${c.linear.pollIntervalMin}min · size ${c.linear.size}`,
             // Which repo an issue lands in is the question this tab gets asked,
             // so it shows the chain rather than only the overrides table.
             `repo: ${c.linear.repoLabelGroup ? `${c.linear.repoLabelGroup}/… label → ` : ""}project → team, matched against [repos] roots`,

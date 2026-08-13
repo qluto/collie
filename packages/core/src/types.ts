@@ -209,6 +209,11 @@ export interface Config {
     repoLabelGroup: string;
     /** flat-label prefix for the same job ("repo:collie"); "" disables */
     repoLabelPrefix: string;
+    /**
+     * Whose issues to collect. "me" = assigned to the API key's own user, so
+     * two people sharing a team and a label do not both run the same issue.
+     */
+    assignee: "me" | "any";
     /** size every imported task gets; Linear estimates are workspace-specific */
     size: TaskSize;
     /** workflow state to move an imported issue into; "" = the team's first started one */

@@ -95,6 +95,7 @@ worktree_root = "~/dev/worktrees"
 enabled = false
 label = "collie"
 poll_interval_min = 5        # someone else's API: minutes, not the 30s tick
+assignee = "me"              # me|any — "me" keeps two people on one team apart
 size = "M"                   # imported tasks all get this size
 start_state = ""             # move the issue here on import; "" = the team's first started state
 comment = true               # comment the collie task id back onto the issue
@@ -169,6 +170,7 @@ export const DEFAULT_CONFIG: Config = {
     label: "collie",
     pollIntervalMin: 5,
     repos: {},
+    assignee: "me",
     repoLabelGroup: "repo",
     repoLabelPrefix: "repo:",
     size: "M",
@@ -183,6 +185,8 @@ const MODES: ScheduleMode[] = ["full", "conservative", "paused"];
 /** Presence only ever caps the mode — "full" here would be a no-op ceiling. */
 const WHEN_PRESENT = ["conservative", "paused"] as const;
 const SIZES: TaskSize[] = ["S", "M", "L"];
+/** Sharing a team means sharing a label, so "mine" has to be the default. */
+const ASSIGNEES = ["me", "any"] as const;
 /** Mirrors `claude --permission-mode`, plus the legacy `default` alias. */
 export const PERMISSION_MODES: PermissionMode[] = [
   "auto", "acceptEdits", "plan", "manual", "dontAsk", "bypassPermissions", "default",
@@ -343,6 +347,7 @@ export function parseConfig(toml: string): Config {
         }
         return out;
       }),
+      assignee: pick("linear.assignee", d.linear.assignee, (v) => oneOf(v, "linear.assignee", ASSIGNEES)),
       repoLabelGroup: pick("linear.repo_label_group", d.linear.repoLabelGroup, (v) => {
         if (typeof v !== "string") fail("linear.repo_label_group must be a string");
         return v; // "" is meaningful: no group axis

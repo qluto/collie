@@ -15,6 +15,19 @@ export function queuePriority(linearPriority: number | undefined): number {
 }
 
 /**
+ * Whether this issue is ours to run.
+ *
+ * A whole team can share one board and one marker label, and without this every
+ * machine would race for every labelled issue. Assignment is the signal Linear
+ * already has for "this one is mine", so it is the one collie reads — filtered
+ * HERE rather than in the query, so an issue you labelled but forgot to assign
+ * is a skip with a reason instead of an issue that silently never appears.
+ */
+export function assignedToMe(issue: LinearIssue, viewerId: string | undefined): boolean {
+  return viewerId !== undefined && issue.assignee?.id === viewerId;
+}
+
+/**
  * A state the issue has not been worked on from yet. `started` is what collie
  * itself moves an issue into on import, so treating it as "not a starting
  * point" makes Linear's own board the second line of dedup: even with the
@@ -154,10 +167,23 @@ export function planImport(
   knownRepos: string[] = [],
   /** injected so this module stays pure; sync passes core's repoProblem */
   checkRepo: (repo: string) => string | null = () => null,
+  /** the API key's own user id; without it "assigned to me" cannot be true */
+  viewerId?: string,
 ): PlanEntry[] {
   return issues.map((issue): PlanEntry => {
     if (imported.has(issue.id)) {
       return { action: "skip", issue, reason: "already imported" };
+    }
+    // Before the state check: "already under way" reads as a report about your
+    // own work, which is misleading for an issue that was never yours.
+    if (cfg.assignee === "me" && !assignedToMe(issue, viewerId)) {
+      return {
+        action: "skip",
+        issue,
+        reason: issue.assignee
+          ? `assigned to ${issue.assignee.displayName}`
+          : "unassigned — assign it to yourself for collie to pick it up",
+      };
     }
     if (!isUnstarted(issue.state)) {
       return { action: "skip", issue, reason: `state "${issue.state.name}" is already under way` };

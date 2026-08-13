@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import {
-  isUnstarted, issuePrompt, pickStartState, planImport, queuePriority, resolveRepo,
+  assignedToMe, isUnstarted, issuePrompt, pickStartState, planImport, queuePriority, resolveRepo,
 } from "../src/linear/plan.ts";
 import type { LinearIssue, LinearWorkflowState } from "../src/linear/api.ts";
 import type { Config } from "../src/types.ts";
+
+const ME = "user_me";
 
 const issue = (over: Partial<LinearIssue> = {}): LinearIssue => ({
   id: "iss_1",
@@ -14,6 +16,7 @@ const issue = (over: Partial<LinearIssue> = {}): LinearIssue => ({
   url: "https://linear.app/acme/issue/ENG-42",
   team: { id: "team_1", key: "ENG" },
   state: { id: "st_1", name: "Todo", type: "unstarted" },
+  assignee: { id: ME, displayName: "me" },
   ...over,
 });
 
@@ -38,7 +41,7 @@ describe("queuePriority", () => {
 
 describe("planImport", () => {
   test("a labelled, unstarted issue with a mapped team becomes a task", () => {
-    const entry = planImport([issue()], cfg(), new Set())[0]!;
+    const entry = planImport([issue()], cfg(), new Set(), [], undefined, ME)[0]!;
     expect(entry.action).toBe("import");
     if (entry.action !== "import") throw new Error("unreachable");
     expect(entry.repo).toBe("/repos/app");
@@ -57,6 +60,9 @@ describe("planImport", () => {
       ],
       cfg(),
       new Set(["a"]),
+      [],
+      undefined,
+      ME,
     );
     expect(entries.map((e) => e.action)).toEqual(["skip", "skip", "skip"]);
     expect(entries.map((e) => (e.action === "skip" ? e.reason : ""))).toEqual([
@@ -78,7 +84,7 @@ describe("planImport", () => {
   });
 
   test("an empty title falls back to the identifier rather than making a blank card", () => {
-    const entry = planImport([issue({ title: "   " })], cfg(), new Set())[0]!;
+    const entry = planImport([issue({ title: "   " })], cfg(), new Set(), [], undefined, ME)[0]!;
     expect(entry.action === "import" && entry.title).toBe("ENG-42");
   });
 
@@ -86,6 +92,53 @@ describe("planImport", () => {
     expect(issuePrompt(issue({ description: null }))).toBe(
       "Linear ENG-42: https://linear.app/acme/issue/ENG-42\n",
     );
+  });
+});
+
+describe("assignment", () => {
+  // A whole team can share one board and one marker label; without this every
+  // machine would race for every labelled issue.
+  test("only issues assigned to the key's own user are collected", () => {
+    const entries = planImport(
+      [
+        issue({ id: "a", identifier: "ENG-1" }),
+        issue({ id: "b", identifier: "ENG-2", assignee: { id: "user_other", displayName: "Sam" } }),
+        issue({ id: "c", identifier: "ENG-3", assignee: null }),
+      ],
+      cfg(),
+      new Set(),
+      [],
+      undefined,
+      ME,
+    );
+    expect(entries.map((e) => e.action)).toEqual(["import", "skip", "skip"]);
+    expect(entries.slice(1).map((e) => (e.action === "skip" ? e.reason : ""))).toEqual([
+      "assigned to Sam",
+      "unassigned — assign it to yourself for collie to pick it up",
+    ]);
+  });
+
+  // Filtered here rather than in the query, so the mistake everyone makes —
+  // labelling an issue and forgetting to assign it — is a reported skip and
+  // not an issue that silently never appears.
+  test("assignee = any collects whatever carries the label", () => {
+    const entries = planImport(
+      [issue({ id: "b", assignee: { id: "user_other", displayName: "Sam" } }), issue({ id: "c", assignee: null })],
+      cfg({ assignee: "any" }),
+      new Set(),
+      [],
+      undefined,
+      ME,
+    );
+    expect(entries.map((e) => e.action)).toEqual(["import", "import"]);
+  });
+
+  // Without a viewer id nothing can be proven to be mine, and guessing "yes"
+  // would run a teammate's work.
+  test("no viewer id means nothing is mine", () => {
+    expect(assignedToMe(issue(), undefined)).toBe(false);
+    const entry = planImport([issue()], cfg(), new Set(), [], undefined, undefined)[0]!;
+    expect(entry.action).toBe("skip");
   });
 });
 

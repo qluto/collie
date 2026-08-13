@@ -18,6 +18,8 @@ export interface LinearIssue {
   state: { id: string; name: string; type: string };
   /** null on an issue that belongs to no project */
   project?: { name: string } | null;
+  /** null on an unassigned issue */
+  assignee?: { id: string; displayName: string } | null;
   /**
    * Every label, not just the marker: one of them may name the repo. Linear
    * label GROUPS arrive as a child whose `name` is the leaf ("forge-neo-mobile")
@@ -108,6 +110,7 @@ export async function graphql<T>(
 // and does not depend on Linear's filter grammar staying put.
 const ISSUES_QUERY = `
 query CollieIssues($label: String!, $first: Int!) {
+  viewer { id }
   issues(
     first: $first
     filter: {
@@ -121,19 +124,37 @@ query CollieIssues($label: String!, $first: Int!) {
       team { id key }
       state { id name type }
       project { name }
+      assignee { id displayName }
       labels { nodes { name parent { name } } }
     }
   }
 }`;
 
-/** Open issues carrying the marker label. `first` caps one poll's blast radius. */
+export interface LabeledIssues {
+  issues: LinearIssue[];
+  /** the API key's own user — who "assigned to me" means */
+  viewerId?: string;
+  /** the window was full, so there may be more the planner never saw */
+  truncated: boolean;
+}
+
+/**
+ * Open issues carrying the marker label, plus who we are.
+ *
+ * `viewer` rides along in the same round trip, so knowing whose issues these
+ * are costs nothing. `first` caps one poll's blast radius; hitting it exactly
+ * is reported rather than passed off as "that was all of them".
+ */
 export async function fetchLabeledIssues(
   key: string,
   label: string,
   first = 50,
-): Promise<LinearIssue[]> {
-  const data = await graphql<{ issues?: { nodes?: LinearIssue[] } }>(key, ISSUES_QUERY, { label, first });
-  return data.issues?.nodes ?? [];
+): Promise<LabeledIssues> {
+  const data = await graphql<{ viewer?: { id?: string }; issues?: { nodes?: LinearIssue[] } }>(
+    key, ISSUES_QUERY, { label, first },
+  );
+  const issues = data.issues?.nodes ?? [];
+  return { issues, viewerId: data.viewer?.id, truncated: issues.length >= first };
 }
 
 const ISSUE_QUERY = `

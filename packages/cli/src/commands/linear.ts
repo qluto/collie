@@ -23,6 +23,7 @@ function runStatus(): number {
   console.log(`linear: ${cfg.enabled ? "enabled" : "disabled"}`);
   console.log(`  label:        ${cfg.label}`);
   console.log(`  poll:         every ${cfg.pollIntervalMin}min`);
+  console.log(`  collects:     ${cfg.assignee === "me" ? "issues assigned to you" : "any assignee"}`);
   console.log(`  size:         ${cfg.size}`);
   console.log(`  start state:  ${cfg.startState || "(the team's first started state)"}`);
   console.log(`  comment back: ${cfg.comment ? "yes" : "no"}`);
