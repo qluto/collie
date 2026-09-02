@@ -1,5 +1,5 @@
 import * as fs from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 export interface GitResult {
   ok: boolean;
@@ -208,4 +208,98 @@ export function deleteMergedBranch(repoRoot: string, branch: string): GitResult 
  */
 export function discardBranch(repoRoot: string, branch: string): GitResult {
   return git(repoRoot, ["branch", "-D", branch]);
+}
+
+/**
+ * git that may touch the network. spawnSync's 15s ceiling is a fine guard for
+ * local plumbing and far too tight for a fetch over a slow link, so this one is
+ * async with its own timeout — and never throws: an offline machine must still
+ * dispatch, just from what it already has.
+ */
+async function gitAsync(repoRoot: string, args: string[], timeoutMs = 60_000): Promise<GitResult> {
+  return new Promise((resolve) => {
+    const child = spawn("git", ["-C", repoRoot, ...args], { stdio: ["ignore", "pipe", "pipe"] });
+    let out = "";
+    let err = "";
+    child.stdout.on("data", (c: Buffer) => { out += c.toString(); });
+    child.stderr.on("data", (c: Buffer) => { err += c.toString(); });
+    const timer = setTimeout(() => {
+      err += `\ntimed out after ${Math.round(timeoutMs / 1000)}s`;
+      child.kill("SIGKILL");
+    }, timeoutMs);
+    const done = (ok: boolean): void => {
+      clearTimeout(timer);
+      resolve({ ok, out: out.trim(), err: err.trim() });
+    };
+    child.on("error", (e) => { err += e.message; done(false); });
+    child.on("close", (code) => done(code === 0));
+  });
+}
+
+/**
+ * The remote's primary branch, as `origin/HEAD` records it — "main" for most
+ * repos, "develop" or anything else for the rest. null when the symref is
+ * unset, which is common in clones that never ran `git remote set-head`; the
+ * caller must treat that as "don't know", never as main.
+ */
+export function defaultBranch(repoRoot: string): string | null {
+  const res = git(repoRoot, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
+  if (!res.ok || !res.out) return null;
+  const name = res.out.startsWith("origin/") ? res.out.slice("origin/".length) : res.out;
+  return name.length > 0 ? name : null;
+}
+
+export interface WorktreeBase {
+  /**
+   * What to hand `worktree.create` as `base`: the COMMIT, never the ref name.
+   * `git worktree add -b x path origin/main` makes the new branch TRACK
+   * origin/main (branch.autoSetupMerge), and with push.default=upstream an
+   * agent's plain `git push` would then land on main (live-probed 2026-09-02).
+   * A sha starts no tracking; the note keeps the name for the log.
+   */
+  ref: string;
+  /** one line for the dispatcher log: which ref, and how fresh it is */
+  note: string;
+}
+
+/**
+ * Which ref a task's branch should fork from, freshened first.
+ *
+ * The point of the fetch is that the local copy of the integration branch is
+ * usually whatever the human last pulled, which at 2am may be a week old — the
+ * night's work would then start from stale code and merge badly. A fetch that
+ * fails (offline, no remote, bad URL) is not fatal: falling back to the last
+ * fetched `origin/<name>`, or to the local branch, still beats refusing to
+ * dispatch, and the note says which one happened.
+ *
+ * null = nothing to name, and the caller must then create the worktree with no
+ * base at all (git's own HEAD default), exactly as before this existed.
+ */
+export async function resolveWorktreeBase(
+  repoRoot: string,
+  opts: { base: string; fetch: boolean },
+): Promise<WorktreeBase | null> {
+  const name = opts.base || defaultBranch(repoRoot);
+  if (!name) return null;
+
+  let fetched = false;
+  let fetchErr = "";
+  if (opts.fetch) {
+    const res = await gitAsync(repoRoot, ["fetch", "--quiet", "origin", name]);
+    fetched = res.ok;
+    if (!res.ok) fetchErr = res.err.split("\n").map((l) => l.trim()).filter(Boolean)[0] ?? "unknown error";
+  }
+
+  const remote = git(repoRoot, ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${name}`]);
+  if (remote.ok && remote.out) {
+    const how = !opts.fetch
+      ? "not fetched"
+      : fetched
+        ? "fetched"
+        : `fetch failed: ${fetchErr}, using last fetched`;
+    return { ref: remote.out, note: `origin/${name}@${remote.out.slice(0, 8)} (${how})` };
+  }
+  const local = git(repoRoot, ["rev-parse", "--verify", "--quiet", `refs/heads/${name}`]);
+  if (local.ok && local.out) return { ref: local.out, note: `${name}@${local.out.slice(0, 8)} (local, no origin)` };
+  return null;
 }

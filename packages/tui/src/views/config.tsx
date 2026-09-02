@@ -65,6 +65,24 @@ function sectionsOf(c: Config): Section[] {
       ],
     },
     {
+      label: "🌳 worktree",
+      lines: [
+        `fork from ${c.worktree.base || "origin/HEAD"} · ${c.worktree.fetch ? "fetched at dispatch" : "no fetch"}`,
+        c.worktree.postCreate
+          ? `post_create: ${c.worktree.postCreate} (${c.worktree.postCreateTimeoutSec}s)`
+          : "no post_create — the checkout is whatever git carries",
+        Object.keys(c.worktree.repos).length
+          ? Object.entries(c.worktree.repos)
+              .map(([repo, o]) => `${repo.split("/").at(-1)}: ${[
+                o.base !== undefined ? `base ${o.base || "origin/HEAD"}` : "",
+                o.fetch !== undefined ? (o.fetch ? "fetch" : "no fetch") : "",
+                o.postCreate !== undefined ? "own post_create" : "",
+              ].filter(Boolean).join(", ")}`)
+              .join(" · ")
+          : "(no per-repo overrides)",
+      ],
+    },
+    {
       label: "🔗 linear",
       lines: c.linear.enabled
         ? [

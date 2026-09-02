@@ -269,6 +269,19 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
   stored path is absolute so `~`, `.` and the real path are one repo to
   everything that later groups by it. The importer turns the same check into a
   reported `skip`, since an unattended path must never throw mid-run.
+- **A worktree's base is resolved at DISPATCH, never at creation**: the whole
+  value of forking from `origin/<default>` is that it was fetched moments ago,
+  and a task queued at 18:00 runs at 03:00. `worktree.create` takes `base`
+  (live-probed 2026-09-02, same ref the CLI's `--base` takes) and is handed the
+  COMMIT SHA, never `origin/<name>`: a ref name makes the new branch TRACK it,
+  and under `push.default=upstream` an agent's `git push` would land on main. A failed fetch
+  falls back to the last fetched ref (then to the local branch) and SAYS which
+  in the log — offline must not stop the night. `origin/HEAD` unset and no
+  `[worktree] base` = no base passed at all, i.e. exactly the old behaviour.
+  `post_create` runs on the REOPEN path too (a retry gets the same checkout),
+  so it has to be idempotent, and a non-zero exit requeues rather than starting
+  an agent on a half-prepared checkout — a session that discovers the missing
+  `.env` has already spent the tokens.
 - Two task axes, do not conflate them: `size` = token-cost estimate (feeds the
   quota math + conservative cap), `priority` = queue order ONLY (no gating
   power). `defer` no longer exists — a task in collie is by definition

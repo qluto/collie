@@ -110,6 +110,21 @@ export interface ScheduleWindow {
   mode: ScheduleMode;
 }
 
+/**
+ * How a task's worktree is prepared. Both halves answer the same question —
+ * "is this checkout what the human would have made by hand" — one for the
+ * commit it forks from, one for the files git does not carry.
+ */
+export interface WorktreeSettings {
+  /** branch to fork from; "" = whatever origin/HEAD points at */
+  base: string;
+  /** fetch that branch from origin first, so the fork point is not last week's */
+  fetch: boolean;
+  /** /bin/sh snippet run inside the fresh checkout before the agent starts */
+  postCreate: string;
+  postCreateTimeoutSec: number;
+}
+
 export interface Config {
   dispatch: {
     wipLimit: number;
@@ -185,6 +200,14 @@ export interface Config {
   done: {
     /** tear the task's pane/worktree down as part of `collie done` */
     close: boolean;
+  };
+  worktree: WorktreeSettings & {
+    /**
+     * Per-repo overrides keyed by the MAIN checkout's resolved path. One
+     * machine holds repos that branch from different places and need different
+     * files copied in, so the top-level values are only ever a default.
+     */
+    repos: Record<string, Partial<WorktreeSettings>>;
   };
   linear: {
     /**

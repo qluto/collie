@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
   branchState, commitsAhead, deleteMergedBranch, diffSummary, dirtyFiles, dirtyState, headCommit,
-  mergedBranches, pruneWorktrees, removeWorktree,
+  defaultBranch, mergedBranches, pruneWorktrees, removeWorktree, resolveWorktreeBase,
 } from "../src/git.ts";
 
 let repo: string;
@@ -148,5 +148,81 @@ describe("git helpers", () => {
     expect(run(repo, "worktree", "list", "--porcelain")).toContain(wt);
     expect(pruneWorktrees(repo).ok).toBe(true);
     expect(run(repo, "worktree", "list", "--porcelain")).not.toContain(wt);
+  });
+});
+
+/**
+ * A bare "origin" plus two clones: one is the machine collie dispatches from
+ * (deliberately left behind), the other is the colleague who pushed while it
+ * slept. That gap is the whole reason resolveWorktreeBase fetches.
+ */
+describe("resolveWorktreeBase", () => {
+  let origin: string;
+  let local: string;
+
+  beforeEach(() => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "collie-remote-"));
+    origin = path.join(dir, "origin.git");
+    fs.mkdirSync(origin);
+    run(origin, "init", "-q", "--bare", "-b", "main");
+
+    const seed = path.join(dir, "seed");
+    run(dir, "clone", "-q", origin, seed);
+    commit(seed, "README.md", "one\n");
+    run(seed, "push", "-q", "origin", "main");
+
+    local = path.join(dir, "local");
+    run(dir, "clone", "-q", origin, local);
+    run(local, "remote", "set-head", "origin", "-a");
+
+    // the colleague's push, which `local` has never seen
+    commit(seed, "later.txt", "two\n");
+    run(seed, "push", "-q", "origin", "main");
+  });
+
+  test("fetch=true resolves origin/HEAD's branch at the remote's tip, not the stale local one", async () => {
+    expect(defaultBranch(local)).toBe("main");
+    const staleLocal = run(local, "rev-parse", "main");
+    const remoteTip = run(origin, "rev-parse", "main");
+    expect(staleLocal).not.toBe(remoteTip);
+
+    const base = (await resolveWorktreeBase(local, { base: "", fetch: true }))!;
+    // a sha, not "origin/main": a ref name would make the task branch TRACK it
+    expect(base.ref).toBe(remoteTip);
+    expect(base.note).toBe(`origin/main@${remoteTip.slice(0, 8)} (fetched)`);
+    expect(run(local, "rev-parse", "origin/main")).toBe(remoteTip);
+    expect(run(local, "rev-parse", "main")).toBe(staleLocal); // the local branch is untouched
+  });
+
+  test("fetch=false uses whatever was last fetched, and an explicit base wins over origin/HEAD", async () => {
+    const before = run(local, "rev-parse", "origin/main");
+    const base = (await resolveWorktreeBase(local, { base: "", fetch: false }))!;
+    expect(base).toEqual({ ref: before, note: `origin/main@${before.slice(0, 8)} (not fetched)` });
+    expect(run(local, "rev-parse", "origin/main")).toBe(before);
+
+    run(local, "push", "-q", "origin", "main:develop");
+    const explicit = (await resolveWorktreeBase(local, { base: "develop", fetch: true }))!;
+    expect(explicit.ref).toBe(run(local, "rev-parse", "origin/develop"));
+    expect(explicit.note).toStartWith("origin/develop@");
+  });
+
+  test("a broken remote falls back to the last fetched ref and says the fetch failed", async () => {
+    run(local, "remote", "set-url", "origin", path.join(origin, "..", "gone.git"));
+    const base = (await resolveWorktreeBase(local, { base: "", fetch: true }))!;
+    expect(base.ref).toBe(run(local, "rev-parse", "origin/main"));
+    expect(base.note).toStartWith("origin/main@");
+    expect(base.note).toContain(" (fetch failed: ");
+    expect(base.note).toEndWith(", using last fetched)");
+  });
+
+  test("no remote at all falls back to the local branch, and an unknown name is null", async () => {
+    // `repo` is the plain init from the outer beforeEach: no origin, no origin/HEAD
+    expect(defaultBranch(repo)).toBeNull();
+    expect(await resolveWorktreeBase(repo, { base: "", fetch: true })).toBeNull();
+
+    const base = (await resolveWorktreeBase(repo, { base: "main", fetch: true }))!;
+    expect(base.ref).toBe(run(repo, "rev-parse", "main"));
+    expect(base.note).toBe(`main@${base.ref.slice(0, 8)} (local, no origin)`);
+    expect(await resolveWorktreeBase(repo, { base: "nope", fetch: true })).toBeNull();
   });
 });

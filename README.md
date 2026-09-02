@@ -65,6 +65,35 @@ contained in HEAD is promoted to done for you. What stays in done with an
 as `🗑 Dropped`, where you can discard the branch or reopen the task. Merging a
 dropped task's branch later simply un-drops it.
 
+#### What the worktree forks from, and what it starts with
+
+By default a task's branch forks from **the remote's** primary branch — whatever
+`origin/HEAD` points at — fetched moments before the worktree is made. The local
+copy of `main` is usually whatever you last pulled, and at 3am that can be a week
+old. A failed fetch (offline, no remote) falls back to the last fetched ref and
+says so in the dispatcher log.
+
+Git-ignored files do not come with a fresh checkout, so `post_create` is a shell
+snippet run inside it before the agent starts:
+
+```toml
+[worktree]
+base = ""            # "" = origin/HEAD; set it to "develop" where your team branches from there
+fetch = true
+post_create = 'cp "$COLLIE_REPO/.env" .env'
+post_create_timeout_sec = 60
+
+[worktree.repos."~/dev/projects/myapp"]
+base = "develop"
+post_create = 'ln -sf "$COLLIE_REPO/.env" .env'
+```
+
+It gets `COLLIE_REPO` (the main checkout), `COLLIE_WORKTREE`, `COLLIE_BRANCH` and
+`COLLIE_TASK_ID`, and its output lands in `~/.collie/runs/<id>/post_create.log`.
+A non-zero exit fails that dispatch attempt rather than handing the agent a
+half-prepared checkout, and the retry reopens the same checkout — so keep the
+script idempotent.
+
 A task's repo is validated **when the task is created** — it must exist, be a
 directory, and be a git checkout. The capture form will not leave the repo
 field, and `task add` stops before opening `$EDITOR`.

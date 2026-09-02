@@ -1,7 +1,8 @@
 import * as fs from "node:fs";
+import * as path from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { configPath, ensureDataDirs, expandTilde } from "./paths.ts";
-import type { Config, PermissionMode, ScheduleMode, ScheduleWindow, TaskSize } from "./types.ts";
+import type { Config, PermissionMode, ScheduleMode, ScheduleWindow, TaskSize, WorktreeSettings } from "./types.ts";
 
 export const DEFAULT_CONFIG_TOML = `[dispatch]
 wip_limit = 2
@@ -85,6 +86,31 @@ permission_mode = "auto"
 worktree = true
 worktree_root = "~/dev/worktrees"
 
+[worktree]
+# Branch a task's worktree forks from. "" = the remote's default branch (what
+# origin/HEAD points at — main for most repos). Set it where the team branches
+# from somewhere else:  base = "develop"
+base = ""
+# Fetch that branch from origin right before forking, so a local develop that
+# is a week old is never what the night's work starts from. A failed fetch
+# (offline, no remote) falls back to what is local and says so in the log.
+fetch = true
+# Shell snippet run INSIDE the fresh checkout, before the agent starts — for
+# the files git does not carry (.env, local settings). /bin/sh -c, with
+# COLLIE_REPO (main checkout), COLLIE_WORKTREE, COLLIE_BRANCH, COLLIE_TASK_ID:
+#   post_create = 'cp "$COLLIE_REPO/.env" .env'
+#   post_create = "~/dev/projects/myapp/.collie/worktree-setup.sh"
+# A non-zero exit fails that dispatch attempt (the task is requeued and the
+# same checkout reopened), so keep it idempotent. Output lands in
+# runs/<id>/post_create.log.
+post_create = ""
+post_create_timeout_sec = 60
+
+# Per-repo overrides, keyed by the checkout's path (~ is fine):
+# [worktree.repos."~/dev/projects/myapp"]
+# base = "develop"
+# post_create = 'ln -sf "$COLLIE_REPO/.env" .env'
+
 [linear]
 # Auto-collect Linear issues carrying \`label\` as collie tasks. Off by default.
 # An issue whose repo cannot be worked out is skipped with the reason printed,
@@ -165,6 +191,13 @@ export const DEFAULT_CONFIG: Config = {
   done: {
     close: false,
   },
+  worktree: {
+    base: "",
+    fetch: true,
+    postCreate: "",
+    postCreateTimeoutSec: 60,
+    repos: {},
+  },
   linear: {
     enabled: false,
     label: "collie",
@@ -207,6 +240,17 @@ function num(v: unknown, name: string, opts?: { min?: number; max?: number }): n
 function str(v: unknown, name: string): string {
   if (typeof v !== "string" || v.length === 0) fail(`${name} must be a non-empty string`);
   return v;
+}
+
+/** Like str(), but "" is a meaningful value: "no base", "no script". */
+function optStr(v: unknown, name: string): string {
+  if (typeof v !== "string") fail(`${name} must be a string`);
+  return v;
+}
+
+/** 1s floor (0 could never finish), 1h ceiling (dispatch would look wedged). */
+function timeoutSec(v: unknown, name: string): number {
+  return num(v, name, { min: 1, max: 3600 });
 }
 
 function bool(v: unknown, name: string): boolean {
@@ -329,6 +373,35 @@ export function parseConfig(toml: string): Config {
       close: pick("done.close", d.done.close, (v) => {
         if (typeof v !== "boolean") fail("done.close must be a boolean");
         return v;
+      }),
+    },
+    worktree: {
+      base: pick("worktree.base", d.worktree.base, (v) => optStr(v, "worktree.base")),
+      fetch: pick("worktree.fetch", d.worktree.fetch, (v) => bool(v, "worktree.fetch")),
+      postCreate: pick("worktree.post_create", d.worktree.postCreate, (v) => optStr(v, "worktree.post_create")),
+      postCreateTimeoutSec: pick("worktree.post_create_timeout_sec", d.worktree.postCreateTimeoutSec, (v) => timeoutSec(v, "worktree.post_create_timeout_sec")),
+      repos: pick("worktree.repos", d.worktree.repos, (v) => {
+        if (v === null || typeof v !== "object" || Array.isArray(v)) {
+          fail("worktree.repos must be a table of repo path -> settings");
+        }
+        const out: Record<string, Partial<WorktreeSettings>> = {};
+        for (const [repo, raw] of Object.entries(v as Record<string, unknown>)) {
+          if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+            fail(`worktree.repos."${repo}" must be a table`);
+          }
+          const o = raw as Record<string, unknown>;
+          const over: Partial<WorktreeSettings> = {};
+          if (o.base !== undefined) over.base = optStr(o.base, `worktree.repos."${repo}".base`);
+          if (o.fetch !== undefined) over.fetch = bool(o.fetch, `worktree.repos."${repo}".fetch`);
+          if (o.post_create !== undefined) over.postCreate = optStr(o.post_create, `worktree.repos."${repo}".post_create`);
+          if (o.post_create_timeout_sec !== undefined) {
+            over.postCreateTimeoutSec = timeoutSec(o.post_create_timeout_sec, `worktree.repos."${repo}".post_create_timeout_sec`);
+          }
+          // Keyed by the same absolute form the task's repo is stored in, so
+          // "~/dev/x", "./x" and the real path are one repo to the lookup.
+          out[path.resolve(expandTilde(repo))] = over;
+        }
+        return out;
       }),
     },
     linear: {

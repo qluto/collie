@@ -30,6 +30,41 @@ describe("config", () => {
     expect(() => parseConfig(`[quota.burn_down]\nenabled = "yes"\n`)).toThrow(ConfigError);
   });
 
+  test("worktree defaults: origin/HEAD, fetched, no script", () => {
+    expect(parseConfig(DEFAULT_CONFIG_TOML).worktree).toEqual({
+      base: "",
+      fetch: true,
+      postCreate: "",
+      postCreateTimeoutSec: 60,
+      repos: {},
+    });
+    // a config written before this feature existed still gets the whole section
+    expect(parseConfig("").worktree).toEqual(DEFAULT_CONFIG.worktree);
+  });
+
+  test("worktree overrides, per-repo table and bounds", () => {
+    const c = parseConfig(
+      `[worktree]\nbase = "develop"\nfetch = false\npost_create = 'cp "$COLLIE_REPO/.env" .env'\n`
+      + `post_create_timeout_sec = 10\n`
+      + `[worktree.repos."~/dev/projects/myapp"]\nbase = "main"\npost_create_timeout_sec = 5\n`,
+    );
+    expect(c.worktree.base).toBe("develop");
+    expect(c.worktree.fetch).toBe(false);
+    expect(c.worktree.postCreate).toBe('cp "$COLLIE_REPO/.env" .env');
+    expect(c.worktree.postCreateTimeoutSec).toBe(10);
+    // keys are stored expanded + resolved, the same form a task's repo carries
+    const key = path.join(os.homedir(), "dev/projects/myapp");
+    expect(Object.keys(c.worktree.repos)).toEqual([key]);
+    expect(c.worktree.repos[key]).toEqual({ base: "main", postCreateTimeoutSec: 5 });
+
+    expect(() => parseConfig(`[worktree]\npost_create_timeout_sec = 0\n`)).toThrow(ConfigError);
+    expect(() => parseConfig(`[worktree]\npost_create_timeout_sec = 3601\n`)).toThrow(ConfigError);
+    expect(() => parseConfig(`[worktree]\nfetch = "yes"\n`)).toThrow(ConfigError);
+    expect(() => parseConfig(`[worktree]\nbase = 3\n`)).toThrow(ConfigError);
+    expect(() => parseConfig(`[worktree]\nrepos = 3\n`)).toThrow(ConfigError);
+    expect(() => parseConfig(`[worktree.repos."/x"]\nbase = 3\n`)).toThrow(ConfigError);
+  });
+
   test("presence defaults off, and pauses rather than trickles when it is on", () => {
     expect(parseConfig(DEFAULT_CONFIG_TOML).presence).toEqual({
       enabled: false,

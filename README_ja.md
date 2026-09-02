@@ -62,6 +62,35 @@ collie にタスクを入れるということは、**「これは私がいな�
 見せ、ブランチを破棄するかタスクを再開するかを選べます。あとからそのブランチを
 マージすれば、単に dropped でなくなります。
 
+#### worktree は何から分岐し、何を持って始まるか
+
+既定では、タスクのブランチは**リモートの**主ブランチ（`origin/HEAD` が指すもの）から
+分岐します。worktree を作る直前に fetch した状態です。ローカルの `main` はたいてい
+最後に pull したときのままで、午前3時にはそれが1週間前ということもあります。fetch に
+失敗した場合（オフライン、リモートなし）は最後に取得済みの ref にフォールバックし、
+ディスパッチャのログにそう記録します。
+
+git が運ばないファイルは新しいチェックアウトには来ないので、`post_create` は
+エージェントが起動する前にチェックアウトの中で走るシェルスニペットです:
+
+```toml
+[worktree]
+base = ""            # "" = origin/HEAD。チームが develop から分岐するなら "develop"
+fetch = true
+post_create = 'cp "$COLLIE_REPO/.env" .env'
+post_create_timeout_sec = 60
+
+[worktree.repos."~/dev/projects/myapp"]
+base = "develop"
+post_create = 'ln -sf "$COLLIE_REPO/.env" .env'
+```
+
+スクリプトには `COLLIE_REPO`（メインのチェックアウト）、`COLLIE_WORKTREE`、
+`COLLIE_BRANCH`、`COLLIE_TASK_ID` が渡り、出力は
+`~/.collie/runs/<id>/post_create.log` に落ちます。非ゼロ終了はそのディスパッチ試行を
+失敗させます — 中途半端なチェックアウトをエージェントに渡さないためです。リトライは
+同じチェックアウトを開き直すので、スクリプトは冪等に保ってください。
+
 タスクの repo は**登録した時点で**検証されます — 存在すること、ディレクトリで
 あること、git チェックアウトであること。キャプチャフォームは repo 欄から先に進めず、
 `task add` は `$EDITOR` を開く前に止まります。

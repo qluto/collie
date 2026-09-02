@@ -1,5 +1,8 @@
 import * as path from "node:path";
-import { HerdrError, announceStart, getTask, headCommit, transition, updateTask } from "@collie/core";
+import {
+  HerdrError, announceStart, getTask, headCommit, resolveWorktreeBase, runPostCreate, runsDir,
+  transition, updateTask, worktreeSettingsFor,
+} from "@collie/core";
 import type { Task } from "@collie/core";
 import { log, trackPane, untrackPane, type DispatcherCtx } from "./ctx.ts";
 import { pointerPrompt, settingsPath, writeRunArtifacts } from "./artifacts.ts";
@@ -138,6 +141,7 @@ export function requeueOrFail(ctx: DispatcherCtx, taskId: string, reason: string
 
 interface WorktreeResult {
   path: string;
+  branch: string;
   workspaceId: string;
   rootPaneId?: string;
 }
@@ -154,6 +158,14 @@ async function ensureWorktree(ctx: DispatcherCtx, task: Task): Promise<WorktreeR
     task.id,
   );
   const branch = task.branch ?? `collie/${task.id}`;
+  // Resolved HERE, not at task creation: the whole value of the base is that it
+  // was fetched moments ago. A task queued at 18:00 and dispatched at 03:00
+  // would otherwise fork from what origin looked like before dinner.
+  const wt = worktreeSettingsFor(ctx.config, task.repo);
+  const base = await resolveWorktreeBase(task.repo, wt);
+  log(ctx, base
+    ? `task ${task.id}: forking ${branch} from ${base.note}`
+    : `task ${task.id}: origin/HEAD unset and no [worktree] base — forking from HEAD`);
   type WtResponse = {
     workspace?: { workspace_id?: string };
     worktree?: { path?: string };
@@ -162,10 +174,13 @@ async function ensureWorktree(ctx: DispatcherCtx, task: Task): Promise<WorktreeR
   try {
     const res = await ctx.herdr.request<WtResponse>("worktree.create", {
       cwd: task.repo, branch, path: wtPath, label: task.id, focus: false,
+      // create only: worktree.open reopens a checkout that already forked.
+      ...(base ? { base: base.ref } : {}),
     });
     if (res.workspace?.workspace_id) {
       return {
         path: res.worktree?.path ?? wtPath,
+        branch,
         workspaceId: res.workspace.workspace_id,
         rootPaneId: res.root_pane?.pane_id,
       };
@@ -180,13 +195,13 @@ async function ensureWorktree(ctx: DispatcherCtx, task: Task): Promise<WorktreeR
       // No rootPaneId here on purpose: reopening can hand back a workspace that
       // was already open, whose root pane may be one a human is using. Only a
       // pane we just created is ours to close.
-      if (res.workspace?.workspace_id) return { path: wtPath, workspaceId: res.workspace.workspace_id };
+      if (res.workspace?.workspace_id) return { path: wtPath, branch, workspaceId: res.workspace.workspace_id };
     } catch {
       // fall through to the workspace scan below
     }
     // Already open as a workspace? Find the pane whose cwd is the worktree.
     const existing = ctx.agents.find((a) => a.cwd === wtPath);
-    if (existing) return { path: wtPath, workspaceId: existing.workspace_id };
+    if (existing) return { path: wtPath, branch, workspaceId: existing.workspace_id };
     return { error: `worktree: ${(createErr as Error).message}` };
   }
 }
@@ -215,6 +230,29 @@ export async function dispatchTask(ctx: DispatcherCtx, task: Task): Promise<void
       return;
     }
     cwd = wt.path;
+
+    // Before the agent, never after: a session started on a checkout missing
+    // its .env burns the night discovering that. Runs on the reopen path too,
+    // which is why the config asks for an idempotent script.
+    const settings = worktreeSettingsFor(ctx.config, task.repo);
+    const hook = await runPostCreate({
+      script: settings.postCreate,
+      timeoutSec: settings.postCreateTimeoutSec,
+      cwd,
+      env: {
+        COLLIE_REPO: task.repo,
+        COLLIE_WORKTREE: cwd,
+        COLLIE_BRANCH: wt.branch,
+        COLLIE_TASK_ID: task.id,
+      },
+      logPath: path.join(runsDir(task.id), "post_create.log"),
+    });
+    if (!hook.ok) {
+      if (wt.rootPaneId) await closeHalfSpawnedPane(ctx, task.id, wt.rootPaneId);
+      requeueOrFail(ctx, task.id, hook.reason ?? "post_create failed");
+      return;
+    }
+
     // worktree.create takes neither cwd nor env for its shell, so its root pane
     // can never be the task's pane — a tab of our own gets both.
     target = { workspaceId: wt.workspaceId, ownedRootPaneId: wt.rootPaneId };
