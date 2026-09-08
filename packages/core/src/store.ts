@@ -30,7 +30,7 @@ const LEGAL_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
 // --- (de)serialization ------------------------------------------------------
 
 const FRONTMATTER_KEYS: Array<keyof Task> = [
-  "id", "title", "status", "repo", "priority", "size", "worktree", "branch",
+  "id", "title", "status", "repo", "priority", "size", "model", "worktree", "branch",
   "permissionMode", "claudeArgs", "createdAt", "updatedAt", "queuedAt",
   "startedAt", "endedAt", "attempts", "maxAttempts", "rev", "run", "origin",
 ];
@@ -204,6 +204,9 @@ export function createTask(input: NewTaskInput, opts?: { source?: string }): Tas
     repo,
     priority: input.priority ?? 100,
     size: input.size ?? "M",
+    // "" is never stored: absent means claude's own default, and a key holding
+    // an empty string would reach agent.start as `--model ""`.
+    model: input.model?.trim() || d.model.trim() || undefined,
     worktree: input.worktree ?? d.worktree,
     permissionMode: input.permissionMode ?? d.permissionMode,
     claudeArgs: input.claudeArgs ?? [],

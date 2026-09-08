@@ -267,6 +267,7 @@ function App(): React.JSX.Element {
           repo: draft.repo,
           prompt,
           size: draft.size,
+          model: draft.model,
         },
         { source: "tui" },
       );
@@ -475,6 +476,7 @@ function App(): React.JSX.Element {
             const recent = [...new Set(snap.tasks.map((t) => t.repo))];
             return [...recent, ...discovered.filter((r) => !recent.includes(r))];
           })()}
+          modelChoices={config.defaults.modelChoices}
           onSubmit={submitNewTask}
           onCancel={() => setOverlay({ kind: "none" })}
         />

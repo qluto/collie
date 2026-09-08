@@ -207,6 +207,20 @@ async function ensureWorktree(ctx: DispatcherCtx, task: Task): Promise<WorktreeR
 }
 
 /**
+ * The claude flags a task launches with. `claudeArgs` stays LAST so an explicit
+ * flag can still override what the task's own fields asked for; an unset model
+ * passes no flag at all, which is how claude picks its own default.
+ */
+export function claudeArgsFor(task: Task): string[] {
+  return [
+    "--settings", settingsPath(task.id),
+    "--permission-mode", task.permissionMode,
+    ...(task.model ? ["--model", task.model] : []),
+    ...task.claudeArgs,
+  ];
+}
+
+/**
  * Spawn a pane for the task, inject the pointer prompt, mark running.
  * The task stays `queued` until the very last step so a crash mid-dispatch
  * leaves a cleanly redispatable task (half-spawned panes are adopted by
@@ -294,11 +308,7 @@ export async function dispatchTask(ctx: DispatcherCtx, task: Task): Promise<void
         kind: "claude",
         pane_id: paneId,
         // native claude flags: 0.8.0 launches the agent itself, argv is gone
-        args: [
-          "--settings", settingsPath(task.id),
-          "--permission-mode", task.permissionMode,
-          ...task.claudeArgs,
-        ],
+        args: claudeArgsFor(task),
         timeout_ms: readyMs,
       }, { timeoutMs: readyMs + 15_000 });
       break;

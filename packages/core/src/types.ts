@@ -71,6 +71,12 @@ export interface Task {
   repo: string;
   priority: number;
   size: TaskSize;
+  /**
+   * Which claude model runs this task, passed verbatim as `--model`. Free-form
+   * on purpose: claude takes aliases and full ids, and that set churns.
+   * undefined = claude's own default, i.e. no flag at all.
+   */
+  model?: string;
   worktree: boolean;
   branch?: string;
   permissionMode: PermissionMode;
@@ -95,6 +101,7 @@ export interface NewTaskInput {
   prompt: string;
   priority?: number;
   size?: TaskSize;
+  model?: string;
   worktree?: boolean;
   permissionMode?: PermissionMode;
   claudeArgs?: string[];
@@ -194,6 +201,10 @@ export interface Config {
   };
   defaults: {
     permissionMode: PermissionMode;
+    /** "" = claude's own default (no --model flag) */
+    model: string;
+    /** what the new-task form offers after "(default)" */
+    modelChoices: string[];
     worktree: boolean;
     worktreeRoot: string;
   };

@@ -20,7 +20,7 @@ Putting a task into collie is a declaration: **this runs without me.**
 
 | | |
 |---|---|
-| **Day** | Toss a task in — three questions (repo, title, size), then `$EDITOR` for the prompt. Ten seconds. |
+| **Day** | Toss a task in — four questions (repo, title, size, model), then `$EDITOR` for the prompt. Ten seconds. |
 | **Night** | The dispatcher picks tasks off the queue when the schedule, your absence and the remaining quota all agree. |
 | **Morning** | Collect: approve, answer, retry. |
 
@@ -29,6 +29,9 @@ A task has two axes, and they never mean the same thing:
 - **`size`** (S/M/L) — an estimate of token cost. It gates: a conservative
   window will not pick up an oversized task.
 - **`priority`** — queue order, nothing else.
+
+`model` is neither: it is passed straight through as `claude --model`, so any
+name claude accepts works. Unset means claude's own default.
 
 ### Quota from the source, not from a guess
 
@@ -320,7 +323,7 @@ set. The second header line is always the budget forecast
 |---|---|
 | `1` `2` | Tasks / Config tab |
 | `j k` / arrows | move the cursor |
-| `n` | new task (repo → title → size, then `$EDITOR` for the prompt) |
+| `n` | new task (repo → title → size → model, then `$EDITOR` for the prompt) |
 | `d` | promote review → done (done moves to the archive) |
 | `a` | answer an asking task (typed into its pane, which resumes it) |
 | `r` | retry (review / failed; resets the attempt budget) |
@@ -383,7 +386,8 @@ included; untracked files only need `--force`.
 
 ```
 collie task add --repo <path> --title <t> [--size S|M|L] [--priority N]
-                [--no-worktree] [--permission-mode <m>] [--prompt <text>]
+                [--model <name>] [--no-worktree] [--permission-mode <m>]
+                [--prompt <text>]
 collie task list [--status s1,s2] [--json]
 collie task show <id>
 collie task queue|retry|cancel|done <id>

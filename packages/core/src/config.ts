@@ -83,6 +83,11 @@ roots = []
 # bypassPermissions shows a confirmation dialog on startup that the dispatcher
 # does NOT auto-confirm — a task using it will wedge until a human clicks it.
 permission_mode = "auto"
+# Model every task runs on unless it names its own: "" = claude's default.
+# Any name claude --model accepts (sonnet, opus, fable, a full model id).
+model = ""
+# What the new-task form offers, after "(default)".
+model_choices = ["sonnet", "opus", "fable"]
 worktree = true
 worktree_root = "~/dev/worktrees"
 
@@ -185,6 +190,8 @@ export const DEFAULT_CONFIG: Config = {
   },
   defaults: {
     permissionMode: "auto",
+    model: "",
+    modelChoices: ["sonnet", "opus", "fable"],
     worktree: true,
     worktreeRoot: expandTilde("~/dev/worktrees"),
   },
@@ -363,6 +370,16 @@ export function parseConfig(toml: string): Config {
     },
     defaults: {
       permissionMode: pick("defaults.permission_mode", d.defaults.permissionMode, (v) => oneOf(v, "defaults.permission_mode", PERMISSION_MODES)),
+      // "" is meaningful here: it means "pass no --model at all"
+      model: pick("defaults.model", d.defaults.model, (v) => optStr(v, "defaults.model")),
+      modelChoices: pick("defaults.model_choices", d.defaults.modelChoices, (v) => {
+        if (!Array.isArray(v)) fail("defaults.model_choices must be an array of strings");
+        return v.map((m, i) => {
+          const name = str(m, `defaults.model_choices[${i}]`).trim();
+          if (name.length === 0) fail(`defaults.model_choices[${i}] must not be empty`);
+          return name;
+        });
+      }),
       worktree: pick("defaults.worktree", d.defaults.worktree, (v) => {
         if (typeof v !== "boolean") fail("defaults.worktree must be a boolean");
         return v;

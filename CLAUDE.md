@@ -284,7 +284,9 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
   `.env` has already spent the tokens.
 - Two task axes, do not conflate them: `size` = token-cost estimate (feeds the
   quota math + conservative cap), `priority` = queue order ONLY (no gating
-  power). `defer` no longer exists — a task in collie is by definition
+  power). `model` is neither axis: free-form, passed verbatim as `--model`
+  (unset = claude's own default), which is why nothing validates it against an
+  enum. `defer` no longer exists — a task in collie is by definition
   unattended, night-eligible work. New task fields need a `?? default` in
   `parseTaskFile` — existing files on disk predate them.
 - Same for config: `loadConfig` writes `DEFAULT_CONFIG_TOML` only when the file

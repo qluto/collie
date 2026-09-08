@@ -60,7 +60,7 @@ function sectionsOf(c: Config): Section[] {
     {
       label: "🌱 defaults",
       lines: [
-        `permission ${c.defaults.permissionMode} · worktree ${c.defaults.worktree ? "on" : "off"} · done ${c.done.close ? "closes the pane" : "leaves the pane"}`,
+        `permission ${c.defaults.permissionMode} · model ${c.defaults.model || "claude default"} · worktree ${c.defaults.worktree ? "on" : "off"} · done ${c.done.close ? "closes the pane" : "leaves the pane"}`,
         c.defaults.worktreeRoot,
       ],
     },

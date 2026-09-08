@@ -110,6 +110,20 @@ describe("config", () => {
     expect(() => parseConfig(`[defaults]\npermission_mode = "yolo"\n`)).toThrow(ConfigError);
   });
 
+  test("defaults.model is claude's own unless named, with the picker's choices", () => {
+    const d = parseConfig("");
+    expect(d.defaults.model).toBe(""); // "" = pass no --model at all
+    expect(d.defaults.modelChoices).toEqual(["sonnet", "opus", "fable"]);
+
+    const set = parseConfig(`[defaults]\nmodel = "fable"\nmodel_choices = ["opus", "fable"]\n`);
+    expect(set.defaults.model).toBe("fable");
+    expect(set.defaults.modelChoices).toEqual(["opus", "fable"]);
+
+    expect(() => parseConfig(`[defaults]\nmodel = 3\n`)).toThrow(ConfigError);
+    expect(() => parseConfig(`[defaults]\nmodel_choices = "opus"\n`)).toThrow(ConfigError);
+    expect(() => parseConfig(`[defaults]\nmodel_choices = [" "]\n`)).toThrow(ConfigError);
+  });
+
   test("empty file yields defaults", () => {
     const c = parseConfig("");
     expect(c.dispatch.wipLimit).toBe(2);

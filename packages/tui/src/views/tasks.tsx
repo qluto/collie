@@ -95,7 +95,7 @@ function heartbeatBadge(t: Task, now: number): string {
 function metaLine(t: Task, now: number): string {
   return [
     `p${t.priority}`,
-    t.size,
+    t.model ? `${t.size} @${t.model}` : t.size,
     t.repo.split("/").at(-1) ?? "",
     // A task nobody typed says where it came from: "why is this queued" has a
     // different answer for an imported issue than for one you tossed in.

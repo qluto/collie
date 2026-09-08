@@ -34,7 +34,7 @@ function editorPrompt(initial: string): string {
 
 function fmtTask(t: Task): string {
   const wip = t.status === "running" || t.status === "blocked" ? "*" : " ";
-  return `${wip} ${t.id}  ${t.status.padEnd(8)} p${String(t.priority).padEnd(4)} ${t.size} ${path.basename(t.repo).padEnd(20)} ${t.title}`;
+  return `${wip} ${t.id}  ${t.status.padEnd(8)} p${String(t.priority).padEnd(4)} ${t.size}${t.model ? ` @${t.model}` : ""} ${path.basename(t.repo).padEnd(20)} ${t.title}`;
 }
 
 export function runTaskCommand(argv: string[]): number {
@@ -48,6 +48,7 @@ export function runTaskCommand(argv: string[]): number {
           title: { type: "string" },
           prompt: { type: "string" },
           size: { type: "string", default: "M" },
+          model: { type: "string" },
           priority: { type: "string", default: "100" },
           "no-worktree": { type: "boolean", default: false },
           "permission-mode": { type: "string" },
@@ -74,6 +75,7 @@ export function runTaskCommand(argv: string[]): number {
         repo,
         prompt,
         size: values.size as TaskSize,
+        model: values.model?.trim() || undefined,
         priority: Number(values.priority),
         worktree: values["no-worktree"] ? false : undefined,
         permissionMode: values["permission-mode"] as PermissionMode | undefined,

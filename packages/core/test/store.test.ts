@@ -50,6 +50,20 @@ describe("store basics", () => {
     expect(got!.branch).toBe(`collie/${t.id}`);
   });
 
+  // undefined, not "": the field reaches agent.start as `--model <value>`, so
+  // an empty string would launch claude with a blank flag value.
+  test("model round-trips, and no model means no key at all", () => {
+    const named = createTask({ title: "a", repo: REPO, prompt: "p", model: "fable" });
+    expect(getTask(named.id)!.model).toBe("fable");
+    expect(serializeTask(getTask(named.id)!)).toContain("model: fable");
+    expect(parseTaskFile(serializeTask(named), "mem").model).toBe("fable");
+
+    const plain = createTask({ title: "b", repo: REPO, prompt: "p" });
+    expect(getTask(plain.id)!.model).toBeUndefined();
+    expect(serializeTask(getTask(plain.id)!)).not.toContain("model:");
+    expect(createTask({ title: "c", repo: REPO, prompt: "p", model: "  " }).model).toBeUndefined();
+  });
+
   test("markDone: review -> done, running routes through review, idempotent", () => {
     const reviewed = createTask({ title: "a", repo: REPO, prompt: "p" });
     transition(reviewed.id, "running");

@@ -1,7 +1,8 @@
 import React from "react";
 import { Box, Text, render } from "ink";
 import {
-  closePopup, createTask, discoverRepos, listTasks, loadConfig, repoRootOf, showNotification,
+  DEFAULT_CONFIG, closePopup, createTask, discoverRepos, listTasks, loadConfig, repoRootOf,
+  showNotification,
   stripPromptTemplate,
 } from "@collie/core";
 import { NewTaskForm, type NewTaskDraft } from "./views/newTask.tsx";
@@ -21,6 +22,7 @@ export function Standalone(props: {
   knownRepos: string[];
   /** forwarded to the form; only the row-geometry tests pass it */
   checkRepo?: (repo: string) => string | null;
+  modelChoices?: string[];
   onDone: (draft: NewTaskDraft | null) => void;
 }): React.JSX.Element {
   return (
@@ -29,6 +31,7 @@ export function Standalone(props: {
       <NewTaskForm
         knownRepos={props.knownRepos}
         checkRepo={props.checkRepo}
+        modelChoices={props.modelChoices}
         onSubmit={props.onDone}
         onCancel={() => props.onDone(null)}
       />
@@ -66,13 +69,19 @@ async function report(message: string, sound: "none" | "done" | "request"): Prom
 
 export async function runNewTask(opts: { popup?: boolean } = {}): Promise<number> {
   const repos = knownRepos();
+  let modelChoices: string[] = DEFAULT_CONFIG.defaults.modelChoices;
+  try {
+    modelChoices = loadConfig().defaults.modelChoices;
+  } catch {
+    // an unreadable config must not cost the capture form
+  }
 
   process.stdout.write(ENTER_ALT_SCREEN);
   let settle: (draft: NewTaskDraft | null) => void = () => {};
   const answered = new Promise<NewTaskDraft | null>((resolve) => {
     settle = resolve;
   });
-  const app = render(<Standalone knownRepos={repos} onDone={(d) => settle(d)} />, {
+  const app = render(<Standalone knownRepos={repos} modelChoices={modelChoices} onDone={(d) => settle(d)} />, {
     exitOnCtrlC: true,
   });
   void app.waitUntilExit().then(() => settle(null)); // ctrl+c
@@ -104,7 +113,7 @@ export async function runNewTask(opts: { popup?: boolean } = {}): Promise<number
   let task;
   try {
     task = createTask(
-      { title: draft.title, repo: draft.repo, prompt, size: draft.size },
+      { title: draft.title, repo: draft.repo, prompt, size: draft.size, model: draft.model },
       { source: opts.popup ? "popup" : "cli" },
     );
   } catch (err) {

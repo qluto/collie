@@ -4,6 +4,7 @@ import { render } from "ink-testing-library";
 import { NewTaskForm, type NewTaskDraft } from "../src/views/newTask.tsx";
 
 const REPOS = ["/tmp/repo-one", "/tmp/repo-two"];
+const MODELS = ["sonnet", "opus", "fable"];
 
 /**
  * The form stats the chosen path for real; these fixtures are not checkouts.
@@ -29,7 +30,9 @@ async function type(stdin: { write: (s: string) => void }, ...chunks: string[]):
 async function driveToSize(
   onSubmit: (d: NewTaskDraft) => void = () => {},
 ): Promise<ReturnType<typeof render>> {
-  const app = render(<NewTaskForm knownRepos={REPOS} checkRepo={ok} onSubmit={onSubmit} onCancel={() => {}} />);
+  const app = render(
+    <NewTaskForm knownRepos={REPOS} checkRepo={ok} modelChoices={MODELS} onSubmit={onSubmit} onCancel={() => {}} />,
+  );
   await type(app.stdin, "two", "\r", "fix the parser", "\r");
   return app;
 }
@@ -56,7 +59,8 @@ describe("NewTaskForm", () => {
     expect(frame).toContain("fix the parser");
     expect(frame).toContain("size:");
     expect(frame).toContain("[M]"); // default
-    expect(frame).toContain("h/l size · Enter creates & opens $EDITOR");
+    expect(frame).toContain("h/l size · Enter next");
+    expect(frame).not.toContain("model:"); // the model step is still ahead
   });
 
   // The point of checking here rather than at createTask: past this field the
@@ -131,20 +135,27 @@ describe("NewTaskForm", () => {
     expect(rows[titleRow]!.indexOf("fix the parser")).toBe(14);
   });
 
-  test("h/l pick the size and Enter submits {repo, title, size}", async () => {
+  test("h/l pick the size, then the model, and Enter submits", async () => {
     const drafts: NewTaskDraft[] = [];
     const app = await driveToSize((d) => drafts.push(d));
-    await type(app.stdin, "h", "\r");
+    await type(app.stdin, "h", "\r"); // size S, on to the model step
+    expect(strip(app.lastFrame()!)).toContain("[(default)]");
+    expect(strip(app.lastFrame()!)).toContain("h/l model · Enter creates & opens $EDITOR");
+    await type(app.stdin, "l", "l", "l", "l", "\r"); // clamps at the last choice
     app.unmount();
-    expect(drafts).toEqual([{ repo: "/tmp/repo-two", title: "fix the parser", size: "S" }]);
+    expect(drafts).toEqual([
+      { repo: "/tmp/repo-two", title: "fix the parser", size: "S", model: "fable" },
+    ]);
   });
 
-  test("Enter straight through keeps the default size", async () => {
+  test("Enter straight through keeps the default size and names no model", async () => {
     const drafts: NewTaskDraft[] = [];
     const app = await driveToSize((d) => drafts.push(d));
-    await type(app.stdin, "\r");
+    await type(app.stdin, "\r", "\r");
     app.unmount();
-    expect(drafts).toEqual([{ repo: "/tmp/repo-two", title: "fix the parser", size: "M" }]);
+    expect(drafts).toEqual([
+      { repo: "/tmp/repo-two", title: "fix the parser", size: "M", model: undefined },
+    ]);
   });
 
   test("Esc cancels", async () => {

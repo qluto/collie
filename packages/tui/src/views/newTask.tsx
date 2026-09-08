@@ -17,12 +17,14 @@ export interface NewTaskDraft {
   repo: string;
   title: string;
   size: TaskSize;
+  /** undefined = whatever config (or claude itself) defaults to */
+  model?: string;
 }
 
 const SIZES: TaskSize[] = ["S", "M", "L"];
 
 /**
- * Three-question capture: where, what, how big. Everything else (worktree,
+ * Four-question capture: where, what, how big, on which model. Everything else (worktree,
  * permission mode, priority) is a config default — a toss-in must cost under
  * ten seconds. On submit the parent opens $EDITOR for the prompt body and
  * creates the task, already queued.
@@ -32,15 +34,20 @@ export function NewTaskForm(props: {
   knownRepos: string[];
   /** injectable so the view can be rendered without touching a filesystem */
   checkRepo?: (repo: string) => string | null;
+  /** offered after "(default)"; config's defaults.model_choices */
+  modelChoices?: string[];
   onSubmit: (draft: NewTaskDraft) => void;
   onCancel: () => void;
 }): React.JSX.Element {
-  // 0 repo, 1 title, 2 size
+  // 0 repo, 1 title, 2 size, 3 model
   const [step, setStep] = useState(0);
   const [repo, setRepo] = useState("");
   const [repoSel, setRepoSel] = useState(0); // index into candidates; -1 = free text
   const [title, setTitle] = useState("");
   const [sizeIdx, setSizeIdx] = useState(1);
+  // index 0 is "(default)" — no --model flag, i.e. whatever config/claude picks
+  const [modelIdx, setModelIdx] = useState(0);
+  const models = useMemo(() => ["(default)", ...(props.modelChoices ?? [])], [props.modelChoices]);
 
   // typed text filters the known repos (case-insensitive substring on the
   // whole path); arrow keys move the highlight; free text stays possible
@@ -85,11 +92,18 @@ export function NewTaskForm(props: {
     if (step === 2) {
       if (key.leftArrow || input === "h") setSizeIdx((i) => Math.max(0, i - 1));
       if (key.rightArrow || input === "l") setSizeIdx((i) => Math.min(SIZES.length - 1, i + 1));
+      if (key.return) setStep(3);
+      return;
+    }
+    if (step === 3) {
+      if (key.leftArrow || input === "h") setModelIdx((i) => Math.max(0, i - 1));
+      if (key.rightArrow || input === "l") setModelIdx((i) => Math.min(models.length - 1, i + 1));
       if (key.return) {
         props.onSubmit({
           repo: repo.trim(),
           title: title.trim(),
           size: SIZES[sizeIdx]!,
+          model: modelIdx > 0 ? models[modelIdx] : undefined,
         });
       }
     }
@@ -159,12 +173,20 @@ export function NewTaskForm(props: {
           {choice(SIZES, sizeIdx)}
         </Text>
       )}
+      {step >= 3 && (
+        <Text>
+          <Text dimColor>{"model:      "}</Text>
+          {choice(models, modelIdx)}
+        </Text>
+      )}
       <Text dimColor>
         {step === 0
           ? "type to filter, ↑↓ to pick (↑ past top = free input), Enter to confirm"
           : step === 1
             ? "type + Enter"
-            : "h/l size · Enter creates & opens $EDITOR"}
+            : step === 2
+              ? "h/l size · Enter next"
+              : "h/l model · Enter creates & opens $EDITOR"}
         {" · Esc cancel"}
       </Text>
     </Box>
