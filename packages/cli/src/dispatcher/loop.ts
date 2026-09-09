@@ -4,6 +4,7 @@ import {
   syncLinear, type DispatcherState, type ScheduleMode,
 } from "@collie/core";
 import { adoptMerged } from "./adopt.ts";
+import { keepAwake } from "./awake.ts";
 import { createCtx, log, vlog, type DispatcherCtx } from "./ctx.ts";
 import { dispatchTask } from "./dispatch.ts";
 import { reconcile } from "./reconcile.ts";
@@ -109,6 +110,9 @@ export async function runDispatcher(opts: { once?: boolean; verbose?: boolean })
   const ctx = createCtx(config, opts.verbose ?? false);
   log(ctx, `dispatcher started (pid ${process.pid}, poll ${config.dispatch.pollIntervalSec}s, wip ${config.dispatch.wipLimit})`);
 
+  // Released on the way out below; a stop we never see is what `-w` is for.
+  const releaseAwake = !opts.once && config.dispatch.keepAwake ? keepAwake((m) => log(ctx, m)) : null;
+
   let stopping = false;
   let wakeUp: (() => void) | undefined;
   const stop = () => {
@@ -135,6 +139,7 @@ export async function runDispatcher(opts: { once?: boolean; verbose?: boolean })
   } while (!opts.once && !stopping);
 
   for (const [taskId] of ctx.panes) ctx.panes.get(taskId)?.sub?.close();
+  releaseAwake?.();
   // Signal-initiated stop exits non-zero so launchd's KeepAlive
   // (SuccessfulExit=false) restarts us after an accidental kill; launchctl
   // bootout unloads regardless of exit code, so uninstall still sticks.

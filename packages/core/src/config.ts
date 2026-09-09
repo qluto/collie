@@ -11,6 +11,7 @@ poll_interval_sec = 30
 max_attempts = 2
 idle_grace_min = 10          # running+idle this long without completion -> review
 ready_timeout_sec = 60       # agent.start -> prompt-injectable deadline
+keep_awake = true            # hold the Mac awake (caffeinate -imsu) while the dispatcher runs
 
 [[schedule.windows]]
 start = "00:00"
@@ -157,6 +158,7 @@ export const DEFAULT_CONFIG: Config = {
     maxAttempts: 2,
     idleGraceMin: 10,
     readyTimeoutSec: 60,
+    keepAwake: true,
   },
   schedule: {
     windows: [{ start: "00:00", end: "07:00", mode: "full" }],
@@ -319,6 +321,7 @@ export function parseConfig(toml: string): Config {
       maxAttempts: pick("dispatch.max_attempts", d.dispatch.maxAttempts, (v) => num(v, "dispatch.max_attempts", { min: 1, max: 10 })),
       idleGraceMin: pick("dispatch.idle_grace_min", d.dispatch.idleGraceMin, (v) => num(v, "dispatch.idle_grace_min", { min: 1 })),
       readyTimeoutSec: pick("dispatch.ready_timeout_sec", d.dispatch.readyTimeoutSec, (v) => num(v, "dispatch.ready_timeout_sec", { min: 10 })),
+      keepAwake: pick("dispatch.keep_awake", d.dispatch.keepAwake, (v) => bool(v, "dispatch.keep_awake")),
     },
     schedule: {
       windows,

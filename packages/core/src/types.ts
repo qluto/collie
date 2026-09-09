@@ -141,6 +141,8 @@ export interface Config {
     maxAttempts: number;
     idleGraceMin: number;
     readyTimeoutSec: number;
+    /** hold the machine awake (caffeinate -imsu -w <pid>) for the dispatcher's lifetime */
+    keepAwake: boolean;
   };
   schedule: {
     windows: ScheduleWindow[];

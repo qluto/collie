@@ -46,7 +46,7 @@ function sectionsOf(c: Config): Section[] {
       label: "🚦 dispatch",
       lines: [
         `wip ${c.dispatch.wipLimit} running · ${c.dispatch.askingLimit} unanswered questions · ${c.dispatch.maxAttempts} attempts`,
-        `tick ${c.dispatch.pollIntervalSec}s · idle grace ${c.dispatch.idleGraceMin}min · ready timeout ${c.dispatch.readyTimeoutSec}s`,
+        `tick ${c.dispatch.pollIntervalSec}s · idle grace ${c.dispatch.idleGraceMin}min · ready timeout ${c.dispatch.readyTimeoutSec}s · ${c.dispatch.keepAwake ? "keeps the Mac awake" : "lets the Mac sleep"}`,
       ],
     },
     {

@@ -124,6 +124,12 @@ describe("config", () => {
     expect(() => parseConfig(`[defaults]\nmodel_choices = [" "]\n`)).toThrow(ConfigError);
   });
 
+  test("dispatch.keep_awake defaults on and must be a boolean", () => {
+    expect(parseConfig("").dispatch.keepAwake).toBe(true);
+    expect(parseConfig(`[dispatch]\nkeep_awake = false\n`).dispatch.keepAwake).toBe(false);
+    expect(() => parseConfig(`[dispatch]\nkeep_awake = "yes"\n`)).toThrow(ConfigError);
+  });
+
   test("empty file yields defaults", () => {
     const c = parseConfig("");
     expect(c.dispatch.wipLimit).toBe(2);
