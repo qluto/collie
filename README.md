@@ -333,7 +333,7 @@ decision, then the two that want nothing, then what is settled:
 ❓ Asking  1                                    ← the agent's question, inline
 ❌ Failed  1
 🏃 Running  1 · J jump · x cancel               ← with a heartbeat
-⏳ Queued  3 · e edit · [ ] reorder · x delete  ← priority · size · repo
+⏳ Queued  3 · s start now · e edit · [ ] reorder · x delete  ← priority · size · repo
 🗑 Dropped  1 · x discard · u reopen
 📦 Done  42 · A to open
 ```

@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
-  DEFAULT_CONFIG, clearUsageCache, createTask, transition,
+  DEFAULT_CONFIG, clearUsageCache, createTask, transition, updateTask,
   type Config, type HerdrAgentInfo,
 } from "@collie/core";
 import { createCtx } from "../src/dispatcher/ctx.ts";
@@ -101,6 +101,22 @@ describe("planTick WIP accounting", () => {
     const plan = planTick(createCtx(config({ wipLimit: 2, askingLimit: 1 }), false));
     expect(plan.task).toBeUndefined();
     expect(plan.decision).toMatch(/asking limit/);
+  });
+});
+
+describe("planTick start-now", () => {
+  test("a start-now task goes out past a paused window and a full WIP", () => {
+    const running = createTask({ title: "r", repo: REPO, prompt: "p" });
+    transition(running.id, "running", undefined, { source: "test" });
+    createTask({ title: "first in line", repo: REPO, prompt: "p" });
+    const forced = createTask({ title: "now", repo: REPO, prompt: "p" });
+    updateTask(forced.id, (t) => { t.startNow = true; }, { source: "test" });
+    const cfg = config({ wipLimit: 1 });
+    cfg.schedule = { windows: [], defaultMode: "paused" };
+
+    const plan = planTick(createCtx(cfg, false));
+    expect(plan.task?.id).toBe(forced.id);
+    expect(plan.decision).toMatch(/start-now/);
   });
 });
 

@@ -32,6 +32,18 @@ function otherAgentsWorking(ctx: DispatcherCtx): boolean {
 export function planTick(ctx: DispatcherCtx, now = new Date()): TickPlan {
   let mode = resolveMode(ctx.config.schedule, now);
 
+  // A human's "start this now" outranks every policy gate — those exist to
+  // protect a human who just said otherwise. A real limit hit still stops it:
+  // the session would only scrape the same limit and be requeued.
+  const forced = listTasks({ status: ["queued"] }).find((t) => t.startNow && !t.run?.paneId);
+  if (forced) {
+    const hardStop = blockedUntil();
+    if (hardStop) {
+      return { mode, decision: `start-now ${forced.id} held: limit hit; blocked until ${hardStop.toLocaleString()}` };
+    }
+    return { mode, task: forced, decision: `dispatching ${forced.id} (start-now requested)` };
+  }
+
   // Presence post-processes the window's verdict; the probe is one spawnSync
   // per tick and only runs when the feature is on.
   let presence: string | undefined;

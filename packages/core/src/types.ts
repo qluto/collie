@@ -99,6 +99,12 @@ export interface Task {
   rev: number;
   run?: TaskRun;
   origin?: TaskOrigin;
+  /**
+   * A human asked for this queued task to start NOW (TUI `s`): the next tick
+   * dispatches it past schedule, presence, WIP, asking and quota gates. Cleared
+   * as dispatch begins, so a failed start falls back to the ordinary queue.
+   */
+  startNow?: boolean;
   /** Markdown body of the task file — the prompt, verbatim. */
   prompt: string;
 }

@@ -64,7 +64,7 @@ describe("TaskList", () => {
     );
     const frame = lastFrame()!;
     expect(frame).toContain("🏃 Running  1 · J jump · x cancel");
-    expect(frame).toContain("⏳ Queued  1 · e edit · [ ] reorder · x delete");
+    expect(frame).toContain("⏳ Queued  1 · s start now · e edit · [ ] reorder · x delete");
     expect(frame).toContain("p100 · M · collie · ●7m"); // priority, size, repo, heartbeat age
     expect(frame).toContain("p50 · L · repo");
     expect(frame.indexOf("reviewed one")).toBeLessThan(frame.indexOf("still going"));

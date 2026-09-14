@@ -11,6 +11,7 @@ export const KEYMAP: Array<{ keys: string; action: string; context: string }> = 
   { keys: "r", action: "requeue (review/failed)", context: "tasks" },
   { keys: "J", action: "jump to the task's Herdr pane", context: "tasks" },
   { keys: "o", action: "reopen the task's claude session (claude --resume)", context: "tasks" },
+  { keys: "s", action: "start now, past schedule/quota gates (queued)", context: "tasks" },
   { keys: "e", action: "edit prompt in $EDITOR (queued)", context: "tasks" },
   { keys: "[ ]", action: "queue order: earlier / later (queued)", context: "tasks" },
   { keys: "x", action: "delete queued / cancel live / discard a dropped branch (confirm)", context: "tasks" },

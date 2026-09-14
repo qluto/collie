@@ -380,6 +380,13 @@ function App(): React.JSX.Element {
         else flashMsg("a answers a task blocked on a question");
       } else if (input === "r" && task && (task.status === "review" || task.status === "failed")) {
         act(() => retryTask(task.id, { source: "tui" }));
+      } else if (input === "s" && task) {
+        // The dispatcher picks it up on its next tick (≤30s) past every policy
+        // gate; the TUI cannot spawn itself — it holds no dispatcher context.
+        if (task.status === "queued") {
+          act(() => updateTask(task.id, (t) => { t.startNow = true; }, { source: "tui" }));
+          flashMsg(`${task.id} starts on the next dispatcher tick`);
+        } else flashMsg("s starts a queued task now");
       } else if (input === "e" && task) {
         // A queued prompt is still editable; a started one is history.
         if (task.status === "queued") openPromptEditor(task);

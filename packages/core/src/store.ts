@@ -32,7 +32,7 @@ const LEGAL_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
 const FRONTMATTER_KEYS: Array<keyof Task> = [
   "id", "title", "status", "repo", "priority", "size", "model", "worktree", "branch",
   "permissionMode", "claudeArgs", "createdAt", "updatedAt", "queuedAt",
-  "startedAt", "endedAt", "attempts", "maxAttempts", "rev", "run", "origin",
+  "startedAt", "endedAt", "attempts", "maxAttempts", "rev", "run", "origin", "startNow",
 ];
 
 export function serializeTask(task: Task): string {

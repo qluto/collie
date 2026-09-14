@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import {
   ConfigError, dispatcherStatePath, ensureDataDirs, listTasks, loadConfig, refreshLimits,
-  syncLinear, type DispatcherState, type ScheduleMode,
+  syncLinear, updateTask, type DispatcherState, type ScheduleMode,
 } from "@collie/core";
 import { adoptMerged } from "./adopt.ts";
 import { keepAwake } from "./awake.ts";
@@ -93,7 +93,12 @@ export async function tick(ctx: DispatcherCtx): Promise<void> {
     const plan = planTick(ctx);
     mode = plan.mode;
     ctx.lastDecision = plan.decision;
-    if (plan.task) await dispatchTask(ctx, plan.task);
+    if (plan.task) {
+      // One-shot: a start-now that fails requeues as ordinary queued work
+      // instead of bypassing the gates on every retry.
+      if (plan.task.startNow) updateTask(plan.task.id, (t) => { delete t.startNow; }, { source: "dispatcher" });
+      await dispatchTask(ctx, plan.task);
+    }
   }
 
   const wip = listTasks({ status: ["running"] }).length;

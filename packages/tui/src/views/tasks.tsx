@@ -24,7 +24,7 @@ const GROUPS: Array<{ label: string; status: TaskStatus; color?: string; keys?: 
   { label: "❓ Asking", status: "blocked", color: "yellow" },
   { label: "❌ Failed", status: "failed", color: "red" },
   { label: "🏃 Running", status: "running", keys: "J jump · x cancel" },
-  { label: "⏳ Queued", status: "queued", keys: "e edit · [ ] reorder · x delete" },
+  { label: "⏳ Queued", status: "queued", keys: "s start now · e edit · [ ] reorder · x delete" },
 ];
 
 /** key + what it does, so the footer can light the keys up and still read as one line. */
@@ -181,7 +181,7 @@ function buildCards(
       } else {
         // running and queued have produced nothing to show yet, so the card
         // carries what there is to know about them instead
-        detail.push(cut(metaLine(t, now)));
+        detail.push(cut(`${t.startNow ? "▶ starting now · " : ""}${metaLine(t, now)}`));
       }
       cards.push({ g, title, detail: detail.filter((l) => l.length > 0) });
     }
