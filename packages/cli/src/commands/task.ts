@@ -4,8 +4,9 @@ import * as path from "node:path";
 import { parseArgs } from "node:util";
 import { spawnSync } from "node:child_process";
 import {
-  cancelTask, createTask, getTask, listTasks, retryTask, transition, updateTask,
+  cancelTask, createTask, findPullRequest, getTask, listTasks, retryTask, transition, updateTask,
   expandTilde, repoProblem, stripPromptTemplate, PERMISSION_MODES,
+  HerdrClient, herdrSocketPath, reportTaskMetadata,
   type Task, type TaskSize, type TaskStatus, type PermissionMode,
 } from "@collie/core";
 
@@ -37,7 +38,7 @@ function fmtTask(t: Task): string {
   return `${wip} ${t.id}  ${t.status.padEnd(8)} p${String(t.priority).padEnd(4)} ${t.size}${t.model ? ` @${t.model}` : ""} ${path.basename(t.repo).padEnd(20)} ${t.title}`;
 }
 
-export function runTaskCommand(argv: string[]): number {
+export async function runTaskCommand(argv: string[]): Promise<number> {
   const [sub, ...rest] = argv;
   switch (sub) {
     case "add": {
@@ -134,8 +135,27 @@ export function runTaskCommand(argv: string[]): number {
       });
       const t = requireTask(positionals[0]);
       if (!values.summary) die("--summary is required");
-      const next = transition(t.id, "review", { resultSummary: values.summary }, { source: "session" });
+      // The session has just finished, which is exactly when its PR exists (if
+      // it opened one). Best-effort: a missing gh must not block completion.
+      const pr = t.branch ? findPullRequest(t.repo, t.branch) : null;
+      const next = transition(
+        t.id,
+        "review",
+        {
+          resultSummary: values.summary,
+          ...(pr ? { prNumber: pr.number, prUrl: pr.url } : {}),
+          ...(t.branch ? { prCheckedAt: new Date().toISOString() } : {}),
+        },
+        { source: "session" },
+      );
       console.log(`${next.id} -> review`);
+      // The sidebar row still says "running", and this is the call that ends a
+      // run on the normal path. reportTaskMetadata swallows everything — a dead
+      // socket must not change this command's exit code, which the session's
+      // own completion depends on.
+      if (next.run?.paneId) {
+        await reportTaskMetadata(new HerdrClient(herdrSocketPath()), next.id, next.run.paneId, "✅ review");
+      }
       return 0;
     }
     case "fail": {

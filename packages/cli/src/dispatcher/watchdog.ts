@@ -46,7 +46,7 @@ export async function watchdog(ctx: DispatcherCtx): Promise<void> {
     if (!idleTimedOut) continue;
 
     transition(task.id, "review", undefined, { source: "watchdog" });
-    if (paneId) await reportStatus(ctx, task.id, paneId, `collie ⚠ needs review: ${task.title}`);
+    if (paneId) await reportStatus(ctx, task.id, paneId, "⚠ needs review");
     untrackPane(ctx, task.id);
     log(ctx, `task ${task.id} idle ${Math.round((now - lastActivity) / 60000)}min without completion -> review`);
     try {

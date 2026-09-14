@@ -286,6 +286,30 @@ command = "~/.local/bin/collie done"    # absolute path required
 (nothing appears if `[ui.toast] delivery = "off"`) and the pane is renamed
 `✓ <task id>`.
 
+### 7. Optional: Herdr sidebar rows
+
+collie reports three custom tokens for every pane it owns — `$task` (the task's
+title), `$status` (`▶ running`, `✅ review`, `⚠ needs review` when a run went idle
+without completing) and `$pr` (`#1234` once a pull
+request exists for the task's branch, empty until then). Reference them from the
+sidebar layout:
+
+```toml
+# ~/.config/herdr/config.toml
+[ui.sidebar.agents.rows_by_agent]
+claude = [
+  ["state_icon", "machine", "workspace", "tab"],
+  ["agent", { token = "$pr", fg = "#89b4fa", bold = true }, "$status"],
+  ["$task"],
+]
+```
+
+The first row is herdr's default, kept so claude panes collie does not own
+look as they did: a row whose tokens are all empty disappears, so `$task`
+only costs a line where there is a task. Sidebar tokens are text, so the `#1234` there is not clickable. The task's
+Detail view in the TUI renders the pull request URL as a real hyperlink
+(cmd+click in Herdr) — that is the place to open it from.
+
 ---
 
 ## Using it

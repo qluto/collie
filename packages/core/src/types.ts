@@ -46,6 +46,14 @@ export interface TaskRun {
   question?: string;
   /** Set once the dispatcher has captured the pane text behind that question. */
   questionScrapedAt?: string;
+  /** GitHub pull request for the task's branch, when it has one. */
+  prNumber?: number;
+  prUrl?: string;
+  /**
+   * When gh was last asked. Written whether or not a PR was found, so a branch
+   * without one is re-checked on a slow clock instead of every tick.
+   */
+  prCheckedAt?: string;
 }
 
 /**

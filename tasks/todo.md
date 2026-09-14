@@ -589,3 +589,18 @@ dispatch を書き換えて実機 E2E で両パス緑。
     ブランチ `collie/t-…` に HELLO.md のコミット。hooks.log に session-start が出て
     いる = **COLLIE_TASK_ID がペイン経由でちゃんと claude に届いている**
   - 非 worktree: 同上、main に `append second` のコミット
+
+## 2026-09-11 サイドバーに task title と PR を出す（herdr 0.9.0）
+
+- [x] `reportStatus` を 0.9.0 の `pane.report_metadata` 形（`title` + `tokens`）に直す。`custom_status` は存在せず黙って捨てられていた
+- [x] PR 検出: `gh pr list --head <branch>` → `run.prNumber` / `run.prUrl`（review 遷移時 + dispatcher tick で throttle 付き再確認）
+- [x] サイドバー token `$task` / `$status` / `$pr` を送る
+- [x] TUI: カードの meta に `#N`、Detail に `pr` 行を OSC 8 リンクで
+- [x] README に `[ui.sidebar.agents.rows_by_agent]` 設定例、CLAUDE.md の wire facts を 0.9.0 に更新
+- [x] bun test / tsc 緑、実機でサイドバー表示を確認
+
+### Review
+- `custom_status` は 0.8+ に存在せず、数ヶ月間サイドバー報告が捨てられていた。`title` + `tokens {task,status,pr}` に修正
+- 報告処理は core (`herdr/metadata.ts`) に置いた: `task complete`（セッション内で走る通常の終了経路）からも報告する必要があり、dispatcher 専用だと `$status` が running のまま残る
+- PR は push ではなく poll（`gh pr list --head`、complete 時 + tick で 3 件/10 分）。gh は絶対パス解決（launchd の PATH 問題）
+- 296 tests / tsc 緑。`~/.config/herdr/config.toml` に `rows_by_agent.claude` を追加済み、実機で tokens が pane record に載ることを確認

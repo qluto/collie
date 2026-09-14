@@ -2,7 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import { tailEvents } from "@collie/core";
 import type { Task } from "@collie/core";
-import { truncateToWidth, wrapToWidth } from "../cursor.ts";
+import { hyperlink, truncateToWidth, wrapToWidth } from "../cursor.ts";
 
 const LABEL = 11;
 
@@ -26,6 +26,7 @@ export function Detail(props: { task: Task; columns?: number; rows?: number }): 
     ["permission", task.permissionMode],
     ["attempts", `${task.attempts}/${task.maxAttempts}`],
     ["pane", task.run?.paneId],
+    ["pr", task.run?.prNumber ? `#${task.run.prNumber}${task.run.prUrl ? ` ${task.run.prUrl}` : ""}` : undefined],
     ["session", task.run?.sessionId?.slice(0, 8)],
     ["heartbeat", narrow ? task.run?.lastHeartbeatAt?.slice(11, 19) : task.run?.lastHeartbeatAt],
     ["summary", task.run?.resultSummary],
@@ -50,7 +51,11 @@ export function Detail(props: { task: Task; columns?: number; rows?: number }): 
       {shown.map(([k, v]) => (
         <Text key={k}>
           <Text dimColor>{k.padEnd(LABEL)}</Text>
-          {truncateToWidth(v!, width - LABEL)}
+          {/* The link is applied to the already-cut text: the escape bytes must
+              never reach the cell arithmetic. */}
+          {k === "pr" && task.run?.prUrl
+            ? hyperlink(truncateToWidth(v!, width - LABEL), task.run.prUrl)
+            : truncateToWidth(v!, width - LABEL)}
         </Text>
       ))}
       {promptLines > 0 && (

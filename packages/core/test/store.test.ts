@@ -144,6 +144,24 @@ body`;
     expect(reparsed.status).toBe("running");
   });
 
+  test("pull request fields round-trip through the task file", () => {
+    const t = createTask({ title: "pr", repo: REPO, prompt: "p" });
+    transition(t.id, "running", undefined, { source: "test" });
+    transition(
+      t.id,
+      "review",
+      { prNumber: 1234, prUrl: "https://github.com/o/r/pull/1234", prCheckedAt: "2026-09-11T10:00:00Z" },
+      { source: "test" },
+    );
+    const live = getTask(t.id)!;
+    expect(live.run?.prNumber).toBe(1234);
+    expect(live.run?.prUrl).toBe("https://github.com/o/r/pull/1234");
+    expect(live.run?.prCheckedAt).toBe("2026-09-11T10:00:00Z");
+    const reparsed = parseTaskFile(serializeTask(live), "mem");
+    expect(reparsed.run?.prNumber).toBe(1234);
+    expect(reparsed.run?.prUrl).toBe("https://github.com/o/r/pull/1234");
+  });
+
   test("run.question persists, and an explicit undefined patch clears it", () => {
     const t = createTask({ title: "q", repo: REPO, prompt: "p" });
     transition(t.id, "running", undefined, { source: "test" });

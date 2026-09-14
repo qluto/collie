@@ -11,7 +11,7 @@ export type NotificationSound = "none" | "done" | "request";
  * dependency that ends in total silence. The default path is right on every
  * machine that has not moved the socket.
  */
-function socketPath(): string {
+export function herdrSocketPath(): string {
   try {
     return loadConfig().herdr.socketPath;
   } catch {
@@ -32,7 +32,7 @@ export async function showNotification(
   title = "collie",
 ): Promise<boolean> {
   try {
-    const client = new HerdrClient(socketPath());
+    const client = new HerdrClient(herdrSocketPath());
     const res = await client.request<{ shown?: boolean }>("notification.show", {
       title, body, sound,
     });
@@ -51,7 +51,7 @@ export async function showNotification(
  */
 export async function closePopup(): Promise<boolean> {
   try {
-    const client = new HerdrClient(socketPath());
+    const client = new HerdrClient(herdrSocketPath());
     await client.request("popup.close", {});
     return true;
   } catch {

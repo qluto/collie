@@ -100,6 +100,9 @@ function metaLine(t: Task, now: number): string {
     // A task nobody typed says where it came from: "why is this queued" has a
     // different answer for an imported issue than for one you tossed in.
     t.origin?.ref ?? "",
+    // Plain text here: a sidebar/card number is a reference, and the clickable
+    // link lives in Detail where there is room for the URL.
+    t.run?.prNumber ? `#${t.run.prNumber}` : "",
     t.status === "running" ? heartbeatBadge(t, now) : "",
   ]
     .filter(Boolean)

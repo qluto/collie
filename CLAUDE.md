@@ -52,7 +52,7 @@ frames), `COLLIE_CCUSAGE_BIN` (fixture script instead of real ccusage).
    `collie task complete <id>` (pre-allowed in generated permissions) →
    review; a human promotes to done in the TUI.
 
-## Herdr 0.8.0 wire facts (live-probed 2026-08-11; protocol 19)
+## Herdr wire facts (0.8.0 live-probed 2026-08-11, protocol 19; 0.9.0 re-probed 2026-09-11)
 
 **`herdr --skill` prints herdr's own agent-facing manual and `herdr <group>`
 (no subcommand) prints that group's exact syntax — read those before guessing.
@@ -121,7 +121,22 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
   close the root pane from the `worktree.open` path — that workspace may
   already be a human's.
 - Sidebar decoration uses `pane.report_metadata` ONLY (with persisted seq) —
-  `pane.report_agent` would feed back into the agent_status we read.
+  `pane.report_agent` would feed back into the agent_status we read. Its real
+  field set is `{pane_id, source, agent?, applies_to_source?, title?,
+  display_agent?, state_labels?, tokens?, seq?, ttl_ms?}`; collie sends `title`
+  plus `tokens: {task, status, pr}`, which a sidebar layout references as
+  `$task`/`$status`/`$pr` (`[ui.sidebar.agents.rows_by_agent]`). The reporter is
+  `reportTaskMetadata` in core, NOT the dispatcher: `collie task complete` is
+  what ends a run on the normal path, and a dispatcher-private helper left that
+  row saying "running" forever. A token whose
+  value is `null` is CLEARED, which is how a task with no PR erases a previous
+  one's number. There is no `custom_status` field and there never was on 0.8+:
+  unknown fields are dropped without a word, so collie reported a status line
+  into the void for months. `pane.get` reads both back (`pane.title`,
+  `pane.tokens`). Sidebar tokens cannot be links — the PR URL is clickable in
+  the TUI's Detail view instead (OSC 8, which herdr makes cmd+clickable), and
+  the escape bytes are added AFTER `truncateToWidth`, which would otherwise
+  count them as cells.
 - Popups (new in 0.8.0): `[[keys.command]] type = "popup"` opens a
   session-modal terminal without touching the tab layout, sized in cells or
   percentages, inheriting the calling pane's cwd. One per session
@@ -282,6 +297,17 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
   so it has to be idempotent, and a non-zero exit requeues rather than starting
   an agent on a half-prepared checkout — a session that discovers the missing
   `.env` has already spent the tokens.
+- **A task's pull request is polled, never pushed**: the session opens it at a
+  moment collie never hears about, so `findPullRequest` (core/src/pr.ts) asks
+  `gh pr list --head <branch> --state all` at `task complete` and, for
+  running/blocked/review tasks with a branch and no PR yet, at most 3 tasks per
+  tick and per task no more than every 10min (`prCheckedAt` is written whether
+  or not one was found, so "no PR" costs one call per 10min, not one per tick).
+  Every failure — no gh, no GitHub remote, not logged in, bad JSON — is null:
+  this is decoration, and nothing about a night may hinge on a third-party CLI.
+  `gh` is resolved absolutely (`COLLIE_GH_BIN` → /opt/homebrew/bin →
+  /usr/local/bin → bare `gh`) for the same reason as `/usr/sbin/ioreg`: launchd's
+  PATH has neither Homebrew prefix.
 - Two task axes, do not conflate them: `size` = token-cost estimate (feeds the
   quota math + conservative cap), `priority` = queue order ONLY (no gating
   power). `model` is neither axis: free-form, passed verbatim as `--model`

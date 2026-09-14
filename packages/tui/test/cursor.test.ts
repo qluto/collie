@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { displayWidth, padToWidth, truncateToWidth } from "../src/cursor.ts";
+import { displayWidth, hyperlink, padToWidth, truncateToWidth } from "../src/cursor.ts";
 
 describe("displayWidth", () => {
   test("ascii is one cell, CJK two", () => {
@@ -42,5 +42,20 @@ describe("padToWidth", () => {
 
   test("truncateToWidth stays the authority on the cut", () => {
     expect(truncateToWidth("abcdef", 4)).toBe("abc…");
+  });
+});
+
+describe("hyperlink", () => {
+  test("wraps the text in OSC 8, leaving the visible text untouched", () => {
+    const link = hyperlink("#12", "https://example.test/pull/12");
+    expect(link).toBe("\x1b]8;;https://example.test/pull/12\x1b\\#12\x1b]8;;\x1b\\");
+    expect(link.replace(/\x1b]8;;[^\x1b]*\x1b\\/g, "")).toBe("#12");
+  });
+
+  test("the escapes are added after the width arithmetic, never measured by it", () => {
+    const visible = truncateToWidth("#12 https://example.test/pull/12", 10);
+    expect(displayWidth(visible)).toBe(10);
+    // the link around it is invisible to the terminal's cell count
+    expect(hyperlink(visible, "https://example.test/pull/12")).toContain(visible);
   });
 });

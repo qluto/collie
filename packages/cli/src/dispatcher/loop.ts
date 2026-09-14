@@ -7,6 +7,7 @@ import { adoptMerged } from "./adopt.ts";
 import { keepAwake } from "./awake.ts";
 import { createCtx, log, vlog, type DispatcherCtx } from "./ctx.ts";
 import { dispatchTask } from "./dispatch.ts";
+import { checkPullRequests } from "./pr.ts";
 import { reconcile } from "./reconcile.ts";
 import { watchdog } from "./watchdog.ts";
 import { planTick } from "./gates.ts";
@@ -81,6 +82,9 @@ export async function tick(ctx: DispatcherCtx): Promise<void> {
   // the socket never carries. Also refreshes the scan the TUI's dropped list
   // reads.
   await adoptMerged(ctx);
+  // After adoption, so a task that just landed and was archived is not asked
+  // about: updateTask cannot reach an archived file.
+  await checkPullRequests(ctx);
 
   let mode: ScheduleMode | "degraded" = "degraded";
   if (ctx.degraded) {

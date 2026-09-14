@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import {
-  HerdrError, announceStart, getTask, headCommit, resolveWorktreeBase, runPostCreate, runsDir,
-  transition, updateTask, worktreeSettingsFor,
+  HerdrError, announceStart, getTask, headCommit, reportTaskMetadata, resolveWorktreeBase,
+  runPostCreate, runsDir, transition, updateTask, worktreeSettingsFor,
 } from "@collie/core";
 import type { Task } from "@collie/core";
 import { log, trackPane, untrackPane, type DispatcherCtx } from "./ctx.ts";
@@ -401,7 +401,7 @@ export async function dispatchTask(ctx: DispatcherCtx, task: Task): Promise<void
     },
     { source: "dispatcher" },
   );
-  await reportStatus(ctx, task.id, paneId, `collie ▶ ${task.title}`);
+  await reportStatus(ctx, task.id, paneId, "▶ running");
   log(ctx, `task ${task.id} running in pane ${paneId}`);
 
   // Everything a task's origin is owed once it is actually running — and no
@@ -417,28 +417,9 @@ export async function dispatchTask(ctx: DispatcherCtx, task: Task): Promise<void
   }
 }
 
-/**
- * Push a status line into Herdr's sidebar for the pane. Deliberately uses only
- * pane.report_metadata (display channel), never pane.report_agent: reporting a
- * semantic state would feed back into the agent_status we ourselves read for
- * scheduling decisions.
- */
-export async function reportStatus(ctx: DispatcherCtx, taskId: string, paneId: string, text: string): Promise<void> {
-  try {
-    const fresh = getTask(taskId);
-    const seq = (fresh?.run?.reportSeq ?? 0) + 1;
-    updateTask(taskId, (t) => {
-      t.run = { ...t.run, reportSeq: seq };
-    });
-    await ctx.herdr.request("pane.report_metadata", {
-      pane_id: paneId,
-      source: "collie",
-      custom_status: text,
-      seq,
-    });
-  } catch {
-    // sidebar decoration is best-effort
-  }
+/** Thin wrapper over core's reporter: the dispatcher owns the client, not the shape. */
+export async function reportStatus(ctx: DispatcherCtx, taskId: string, paneId: string, status: string): Promise<void> {
+  await reportTaskMetadata(ctx.herdr, taskId, paneId, status);
 }
 
 /** pane.read result shape (verified 0.7.1): { type: "pane_read", read: { text } } */

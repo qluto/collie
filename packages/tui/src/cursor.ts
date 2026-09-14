@@ -160,3 +160,16 @@ export function wrapToWidth(s: string, cells: number, maxLines: number): string[
   if (rest) lines.push(truncateToWidth(rest, cells));
   return lines;
 }
+
+/**
+ * Wrap already-laid-out text in an OSC 8 hyperlink (Herdr makes those clickable
+ * inside a pane; cmd+click on macOS).
+ *
+ * Must be applied AFTER the width arithmetic above: displayWidth counts every
+ * code point it is handed, so an escape sequence inside a string would be
+ * measured as content and truncateToWidth would happily cut the link in half.
+ * Callers pass the visible text they have already cut to fit.
+ */
+export function hyperlink(text: string, url: string): string {
+  return `\x1b]8;;${url}\x1b\\${text}\x1b]8;;\x1b\\`;
+}
