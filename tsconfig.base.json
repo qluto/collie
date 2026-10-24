@@ -7,7 +7,7 @@
     "noUncheckedIndexedAccess": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
-    "jsx": "react-jsx",
+    "jsx": "react",
     "allowImportingTsExtensions": true,
     "types": ["node", "bun"],
     "noEmit": true

@@ -7,6 +7,19 @@ import { runHookCommand } from "./commands/hook.ts";
 import { runDispatcherCommand } from "./commands/dispatcher.ts";
 import { runLinearCommand } from "./commands/linear.ts";
 
+/**
+ * React picks its build from NODE_ENV when it is first imported, and unset
+ * means development — whose reconciler records a performance.measure() per
+ * component render for the DevTools track and never clears them (a TUI left
+ * open for days grew past 6GiB). Setting it this late only works because JSX
+ * is the classic runtime (tsconfig `"jsx": "react"`): Bun fixes the automatic
+ * runtime's jsx/jsxDEV choice at process start, and the production
+ * jsx-dev-runtime exports no jsxDEV. An explicit NODE_ENV still wins.
+ */
+function useProductionReact(): void {
+  process.env.NODE_ENV ??= "production";
+}
+
 const USAGE = `collie — task queue for Claude Code sessions on Herdr
 
 Usage:
@@ -53,11 +66,13 @@ async function main(argv: string[]): Promise<number> {
     case "new": {
       // Lazy, and from the subpath: the capture form must not drag the task
       // view and its evidence caches into a popup.
+      useProductionReact();
       const { runNewTask } = await import("@collie/tui/new");
       return runNewTask({ popup: rest.includes("--popup") });
     }
     case "tui": {
       // Lazy import keeps ink/react out of dispatcher and hook processes.
+      useProductionReact();
       const { runTui } = await import("@collie/tui");
       runTui();
       return new Promise<number>(() => {}); // ink owns the process from here

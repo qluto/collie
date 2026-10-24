@@ -527,5 +527,11 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
 
 - TypeScript strict, `.ts`/`.tsx` extension imports, no default exports.
 - Minimal deps (yaml, smol-toml, ink, react — that's the whole tree).
+- JSX is the CLASSIC runtime (`"jsx": "react"`, so every .tsx imports React)
+  and `tui`/`new` set `NODE_ENV=production` just before their lazy import.
+  React's dev reconciler records a `performance.measure()` per render and never
+  clears them — an open TUI grew past 6GiB. The automatic runtime would break
+  that: Bun picks jsx vs jsxDEV at process START, and production React exports
+  no jsxDEV, so going back to `react-jsx` crashes the TUI on its first render.
 - Comments state constraints the code can't show (wire quirks, race guards),
   not narration.
