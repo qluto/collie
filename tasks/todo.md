@@ -626,3 +626,13 @@ dispatch を書き換えて実機 E2E で両パス緑。
 - `collie update` は refuse/plan を純関数化、bare origin + clone の統合テスト（ff、pre-release 非対象、bun.lock 変化で install、plist 有無で restart、CHANGELOG (old,new]、未記載セクション、拒否時は HEAD 不変）
 - Config タブにセクション追加で 30 行では空行入りに収まらなくなったため、該当テストを 32 行に（縮退は既存の budget 処理どおり）
 - 336 tests / tsc 緑。`update --check` と `doctor` を temp COLLIE_HOME で実行確認（実 origin への ls-remote 成功、作業ツリーが dirty なので dev 扱いで通知抑止）
+
+## collie スキル（AI 向け CLI 解説）
+
+- [x] CLI の実挙動を temp COLLIE_HOME で確認（`--prompt` の `-` 始まり、不正遷移、repo 検証）
+- [x] `skills/collie/SKILL.md` を作成、`~/.claude/skills/collie` へ symlink
+- [x] `--help` に `--model` を追加、README / README_ja / CHANGELOG に追記
+
+### Review
+- 全リポジトリから呼べるよう、配置は project skill ではなくリポジトリ同梱 + ユーザースキルへの symlink
+- `--prompt "- x"` は parseArgs で落ちるため、スキルでは `--prompt=` を必須にした

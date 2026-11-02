@@ -7,6 +7,14 @@ heading shape.
 
 ## [Unreleased]
 
+### Added
+- `skills/collie`: a Claude Code skill covering the agent-facing CLI — when work
+  suits an unattended run, how to write its prompt, and how to register and
+  check tasks. Link it into `~/.claude/skills` (see the README).
+
+### Fixed
+- `collie --help` now lists `task add --model`.
+
 ## [0.2.0] - 2026-10-24
 
 ### Added
