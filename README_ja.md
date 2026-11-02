@@ -301,6 +301,16 @@ command = "~/.local/bin/collie done"    # 絶対パスで書くこと
 （`[ui.toast] delivery = "off"` だと何も出ません）、ペイン名が `✓ <task id>` に
 変わります。
 
+### 7. 任意: Claude Code スキル
+
+`skills/collie/SKILL.md` は Claude Code のセッションに CLI の使い方を教えます。
+無人実行に向く作業の見極め、会話なしでも通じるプロンプトの書き方、タスクの登録と
+確認が入っています。どのリポジトリからでも使えるよう、ユーザースキルにリンクします。
+
+```sh
+ln -s "$PWD/skills/collie" ~/.claude/skills/collie
+```
+
 ---
 
 ## 操作

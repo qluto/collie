@@ -333,6 +333,17 @@ only costs a line where there is a task. Sidebar tokens are text, so the `#1234`
 Detail view in the TUI renders the pull request URL as a real hyperlink
 (cmd+click in Herdr) — that is the place to open it from.
 
+### 8. Optional: Claude Code skill
+
+`skills/collie/SKILL.md` teaches a Claude Code session the CLI: which work suits
+an unattended run, how to write a prompt that survives without the conversation,
+and how to register and check tasks. Link it into your user skills so it works
+from every repo:
+
+```sh
+ln -s "$PWD/skills/collie" ~/.claude/skills/collie
+```
+
 ---
 
 ## Using it
