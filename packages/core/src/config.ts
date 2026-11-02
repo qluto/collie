@@ -148,6 +148,14 @@ repo_label_prefix = "repo:"
 # the two names disagree:
 # "Mobile app" = "~/dev/projects/myapp"
 # "ENG"        = "~/dev/projects/monorepo"
+
+[update]
+# Once a day, ask this checkout's own git origin (git ls-remote — read-only,
+# nothing is fetched or changed) whether a newer release tag exists, and say so
+# in the TUI header and \`collie doctor\`. On by default because the only party
+# it talks to is the remote you cloned collie from. It never updates anything:
+# that is \`collie update\`, run by you.
+check = true
 `;
 
 export const DEFAULT_CONFIG: Config = {
@@ -218,6 +226,9 @@ export const DEFAULT_CONFIG: Config = {
     size: "M",
     startState: "",
     comment: true,
+  },
+  update: {
+    check: true,
   },
 };
 
@@ -458,7 +469,38 @@ export function parseConfig(toml: string): Config {
       }),
       comment: pick("linear.comment", d.linear.comment, (v) => bool(v, "linear.comment")),
     },
+    update: {
+      check: pick("update.check", d.update.check, (v) => bool(v, "update.check")),
+    },
   };
+}
+
+/**
+ * Sections of DEFAULT_CONFIG_TOML a user's config.toml does not have — what a
+ * config written before a feature existed is missing. loadConfig never adds
+ * them (the file is the user's), so defaults apply silently; `collie update`
+ * and doctor say so instead. Only the topmost missing table is named (no
+ * `[quota.burn_down]` under an absent `[quota]`), and tables that are empty
+ * by default (`[linear.repos]`) are optional maps, not sections to add.
+ * An unparseable file answers [] — that error is reported elsewhere.
+ */
+export function missingConfigSections(userToml: string): string[] {
+  let user: Record<string, unknown>;
+  let defaults: Record<string, unknown>;
+  try {
+    user = parseToml(userToml) as Record<string, unknown>;
+    defaults = parseToml(DEFAULT_CONFIG_TOML) as Record<string, unknown>;
+  } catch {
+    return [];
+  }
+  const headers = [...DEFAULT_CONFIG_TOML.matchAll(/^\[\[?([A-Za-z0-9_.]+)\]\]?\s*$/gm)].map((m) => m[1]!);
+  const missing: string[] = [];
+  for (const name of [...new Set(headers)]) {
+    const def = get(defaults, name);
+    if (def && typeof def === "object" && !Array.isArray(def) && Object.keys(def).length === 0) continue;
+    if (get(user, name) === undefined) missing.push(name);
+  }
+  return missing.filter((name) => !missing.some((m) => name.startsWith(`${m}.`)));
 }
 
 /**

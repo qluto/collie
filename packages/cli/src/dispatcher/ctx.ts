@@ -26,10 +26,26 @@ export interface DispatcherCtx {
   /** last Linear failure, so an outage is one log line and not one per poll */
   lastLinearError?: string;
   degraded: boolean;
+  /** collie commit loaded at boot; null when git could not say */
+  bootCommit: string | null;
+  /** this process is the launchd job: KeepAlive restarts it after a non-zero exit */
+  launchd: boolean;
+  /** on-disk HEAD the previous tick saw — the one-tick debounce for a restart */
+  lastDiskCommit: string | null;
+  /** drift already logged (manual runs only report, once per new HEAD) */
+  reportedDrift?: string;
+  /** set at the end of a tick: exit so launchd restarts us onto new code */
+  restartReason?: string;
+  /** last update notice / failure logged, so each is one line, not one per tick */
+  lastUpdateNotice?: string;
+  lastUpdateError?: string;
 }
 
-export function createCtx(config: Config, verbose: boolean): DispatcherCtx {
+export function createCtx(config: Config, verbose: boolean, bootCommit: string | null = null): DispatcherCtx {
   return {
+    bootCommit,
+    lastDiskCommit: bootCommit,
+    launchd: false,
     config,
     herdr: new HerdrClient(config.herdr.socketPath),
     startedAt: new Date().toISOString(),

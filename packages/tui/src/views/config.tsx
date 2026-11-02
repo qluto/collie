@@ -97,6 +97,14 @@ function sectionsOf(c: Config): Section[] {
     },
     { label: "🐕 herdr", lines: [c.herdr.socketPath] },
     {
+      label: "🆙 update",
+      lines: [
+        c.update.check
+          ? "asks origin for release tags once a day (read-only) · collie update installs one"
+          : "off · no release check — collie update still works",
+      ],
+    },
+    {
       label: "📁 repos",
       lines: [c.repos.roots.length ? c.repos.roots.join(" · ") : "(no roots configured)"],
     },

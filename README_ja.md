@@ -182,7 +182,9 @@ collie doctor
 ```
 
 データディレクトリ、設定ファイル、Herdr ソケット、presence プローブ、Claude Code、
-ccusage、usage API を検証します。
+ccusage、usage API を検証します。あわせて collie 自身のバージョン、新しいリリースの
+有無、ディスパッチャがチェックアウト中のコードで動いているか、`config.toml` に無い
+設定セクションも報告します。
 
 ### 3. 設定
 
@@ -219,7 +221,28 @@ tail -f ~/.collie/logs/dispatcher.log
 ```
 
 新しいコードを読ませるには `collie dispatcher restart`。設定の変更に再起動は不要で、
-次の tick で再読込されます。
+次の tick で再読込されます。手で再起動する場面はほとんどありません: launchd の
+ディスパッチャはチェックアウトの HEAD が動いた（`git pull` や `collie update`）ことに
+気づき、新しい HEAD が 1 tick 動かなかったのを確かめてから、tick の切れ目で自分を
+再起動して新しいコードに乗り換えます。
+
+### アップデート
+
+```sh
+collie update --check     # origin に新しいリリースタグがあるか確認
+collie update             # このチェックアウトを最新リリースまで早送り
+```
+
+ディスパッチャは 1 日 1 回、チェックアウト自身の git origin に `git ls-remote`
+（読み取りのみ）でリリースタグを問い合わせ、新しいものがあれば TUI のヘッダに
+`↑ v0.3.0 · collie update` と出します（`[update] check = false` で無効化）。自分で
+コードを更新することはありません。`collie update` は、チェックアウトに未コミットの
+変更があるとき、既定ブランチにいないとき、実行中のタスクがあるときは断ります
+（最後のものは `--now` で上書き可。実行中セッションのフックが途中から新しいコードに
+切り替わるため）。最新の `vX.Y.Z` タグへ fast-forward し、`bun.lock` が変わって
+いれば `bun install`、launchd のディスパッチャを再起動し、取り込んだ CHANGELOG の
+項目を表示し、`config.toml` に無い設定セクションを知らせます — 追加するまでは
+既定値が使われます。
 
 ### 5. 任意: Linear
 
@@ -403,6 +426,8 @@ collie dispatcher install | restart | uninstall      (launchd)
 
 collie linear sync [--dry-run] | status
 
+collie update [--check] [--now]  # 最新リリースタグへ fast-forward
+
 collie new [--popup]             # 投函フォーム単体。popup バインド用
 collie tui
 collie doctor
@@ -428,6 +453,19 @@ Linear）、`packages/cli`（ディスパッチャ、フック、task コマン�
 実行時データは `~/.collie/` にあり、`COLLIE_HOME` で差し替えられます — 既定の
 ディレクトリに対して本物のディスパッチャが走っているので、実験には一時ディレクトリを
 指してください。
+
+### リリース手順
+
+1. すべての `package.json`（`packages/core`、`packages/cli`、`packages/tui`）の
+   `version` を上げる。
+2. [CHANGELOG.md](CHANGELOG.md) の `## [Unreleased]` を `## [X.Y.Z] - YYYY-MM-DD`
+   の下へ移す — `collie update` がこの節を表示するので見出しの形式が大事です。
+   **新しい設定セクションは必ず書く**: `loadConfig` は既存の `config.toml` に
+   セクションを足さないので、利用者が知る手段は changelog（と `collie update` の
+   未記載セクション通知）だけです。
+3. コミットして `git tag -a vX.Y.Z -m vX.Y.Z`、`git push origin main vX.Y.Z`。
+   更新候補になるのは素の `vX.Y.Z` タグだけで、プレリリース（`v1.0.0-rc.1`）は
+   対象外です。
 
 ## 制限事項
 

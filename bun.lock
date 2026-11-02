@@ -12,7 +12,7 @@
     },
     "packages/cli": {
       "name": "@collie/cli",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "bin": {
         "collie": "./src/index.ts",
       },
@@ -23,7 +23,7 @@
     },
     "packages/core": {
       "name": "@collie/core",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "smol-toml": "^1.3.1",
         "yaml": "^2.6.1",
@@ -31,7 +31,7 @@
     },
     "packages/tui": {
       "name": "@collie/tui",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "@collie/core": "workspace:*",
         "ink": "^6.0.0",

@@ -271,6 +271,14 @@ export interface Config {
     /** comment the collie task id back onto the issue */
     comment: boolean;
   };
+  update: {
+    /**
+     * Ask the installation's own git origin, read-only, once a day, whether a
+     * newer release tag exists. Only ever a notice: code moves when a human
+     * runs `collie update`.
+     */
+    check: boolean;
+  };
 }
 
 export interface JournalEvent {
@@ -296,4 +304,11 @@ export interface DispatcherState {
   mode: ScheduleMode | "degraded";
   wip: number;
   lastDecision: string;
+  /**
+   * The collie commit this dispatcher process LOADED at boot. Compared with the
+   * checkout's HEAD on disk, it is how anyone can tell the dispatcher is
+   * running code a `git pull` has since replaced. Absent in state files
+   * written before it existed.
+   */
+  commit?: string;
 }
