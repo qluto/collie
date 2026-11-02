@@ -267,6 +267,41 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
 - Task fields that come from outside get no special casing: `origin` is in
   `FRONTMATTER_KEYS`, is optional, and the TUI shows `origin.ref` on the card.
 
+## Updates and code drift (collie's own code)
+
+- Installation = this git checkout (`installRoot()`, core/src → repo root;
+  `COLLIE_INSTALL_ROOT` for tests). Version = `git describe --tags` from HEAD;
+  releases are plain `vX.Y.Z` tags (pre-releases are never offered).
+- **The dispatcher loads its code once; hooks and the CLI load fresh source per
+  call.** After a pull the two disagree silently, so `dispatcher.json` carries
+  the boot `commit` and, at the END of a tick (after `writeState` — never
+  mid-dispatch), `decideDrift` (pure, core/install.ts) compares it with HEAD on
+  disk. It restarts ONLY under launchd (`XPC_SERVICE_NAME` = the label, which
+  is why `DISPATCHER_LABEL` lives in core) and ONLY when the same new HEAD was
+  also seen the previous tick: `git pull` + `bun install` is several steps, and
+  restarting into the middle boots a half-updated tree. The exit goes through
+  the normal stop path, non-zero, so KeepAlive brings it back. A manual
+  `dispatcher run` / `--once` has nobody to restart it: it logs the drift once
+  and keeps running. Do not try to fake launchd by exporting `XPC_SERVICE_NAME`: libxpc
+  aborts (SIGTRAP, exit 133) any process that carries it outside launchd —
+  `runDispatcher({launchd: true})` is the test seam.
+- The update check is `git ls-remote --tags --refs origin` and nothing else —
+  it writes no refs, fetches nothing, touches no checkout. Once per 24h, cached
+  in `update.json` (shared with TUI/doctor), clock advances on failure, never
+  throws; `GIT_TERMINAL_PROMPT=0` + `ssh -o BatchMode=yes` because a 3am
+  passphrase prompt would hang the tick; git is `/usr/bin/git` (`gitBin()`),
+  not a bare name. Between network checks a moved HEAD refreshes only the local
+  half (`current`, `dev`), and readers ignore a check whose `commit` is not the
+  HEAD on disk. Notices are suppressed on a dev checkout (non-default branch or
+  tracked changes). Decisions live in pure functions in core/update.ts.
+- **Never auto-update code unattended.** Only `collie update`, run by a human,
+  moves the checkout (`fetch --tags` + `merge --ff-only <tag>`), and it refuses
+  on tracked changes, a non-default branch, or `running` tasks (`--now`): their
+  hooks would switch code mid-session.
+- A new config section MUST be called out in CHANGELOG.md — `loadConfig` never
+  adds sections to an existing config.toml. `missingConfigSections` (core
+  config.ts) is what `collie update` and doctor use to name them.
+
 ## Non-obvious invariants
 
 - **A task's repo is checked when it is CREATED, never only at dispatch**

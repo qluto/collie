@@ -6,6 +6,7 @@ import { runDoctor } from "./commands/doctor.ts";
 import { runHookCommand } from "./commands/hook.ts";
 import { runDispatcherCommand } from "./commands/dispatcher.ts";
 import { runLinearCommand } from "./commands/linear.ts";
+import { runUpdateCommand } from "./commands/update.ts";
 
 /**
  * React picks its build from NODE_ENV when it is first imported, and unset
@@ -41,6 +42,9 @@ Usage:
   collie dispatcher install | restart | uninstall     (launchd)
   collie linear sync [--dry-run] | status
                             # collect Linear issues carrying the marker label
+  collie update [--check] [--now]
+                            # fast-forward this checkout to the latest release
+                            # tag; --check only asks origin whether one exists
   collie new [--popup]      # the capture form alone, for a herdr popup keybinding
   collie tui
   collie doctor
@@ -61,6 +65,8 @@ async function main(argv: string[]): Promise<number> {
       return runDispatcherCommand(rest);
     case "linear":
       return runLinearCommand(rest);
+    case "update":
+      return runUpdateCommand(rest);
     case "hook":
       return runHookCommand(rest);
     case "new": {

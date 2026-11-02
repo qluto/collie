@@ -1,7 +1,8 @@
 import * as fs from "node:fs";
 import {
-  ConfigError, dispatcherStatePath, ensureDataDirs, listTasks, loadConfig, refreshLimits,
-  syncLinear, updateTask, type DispatcherState, type ScheduleMode,
+  ConfigError, decideDrift, dispatcherStatePath, ensureDataDirs, installCommit, listTasks,
+  loadConfig, refreshLimits, refreshUpdateCheck, shortSha, syncLinear, underLaunchd,
+  updateAvailable, updateTask, type DispatcherState, type ScheduleMode,
 } from "@collie/core";
 import { adoptMerged } from "./adopt.ts";
 import { keepAwake } from "./awake.ts";
@@ -41,6 +42,7 @@ function writeState(ctx: DispatcherCtx, wip: number, mode: ScheduleMode | "degra
     mode,
     wip,
     lastDecision: ctx.lastDecision,
+    ...(ctx.bootCommit ? { commit: ctx.bootCommit } : {}),
   };
   fs.writeFileSync(dispatcherStatePath(), JSON.stringify(state, null, 2));
 }
@@ -61,6 +63,10 @@ export async function tick(ctx: DispatcherCtx): Promise<void> {
     log(ctx, `limits: ${limits.skipped}; falling back to ccusage estimates`);
   }
   ctx.lastLimitsSkip = limits.skipped;
+
+  // Is there a newer collie? Once a day, read-only (ls-remote), never throws.
+  // Only ever a log line here: an unattended process does not move its own code.
+  await checkForUpdate(ctx);
 
   // New work from outside, on its own much slower clock (the module throttles
   // itself). A third-party API being down is a log line, never a tick that
@@ -104,9 +110,62 @@ export async function tick(ctx: DispatcherCtx): Promise<void> {
   const wip = listTasks({ status: ["running"] }).length;
   writeState(ctx, wip, mode);
   vlog(ctx, `tick: ${ctx.lastDecision} (wip ${wip})`);
+
+  // LAST, after the state write: a tick boundary is never mid-dispatch, so
+  // this is the one place exiting for new code loses nothing.
+  checkDrift(ctx);
 }
 
-export async function runDispatcher(opts: { once?: boolean; verbose?: boolean }): Promise<number> {
+async function checkForUpdate(ctx: DispatcherCtx): Promise<void> {
+  try {
+    const check = await refreshUpdateCheck(ctx.config);
+    if (!check) return;
+    if (check.error && check.error !== ctx.lastUpdateError) log(ctx, `update check: ${check.error}`);
+    ctx.lastUpdateError = check.error;
+    const latest = updateAvailable(check);
+    if (latest && latest !== ctx.lastUpdateNotice) {
+      log(ctx, `update: ${latest} is available (running ${check.current ?? "an untagged checkout"}) — run \`collie update\``);
+    }
+    ctx.lastUpdateNotice = latest ?? undefined;
+  } catch (err) {
+    // refreshUpdateCheck is built not to throw; this is the belt to its braces
+    log(ctx, `update check: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * Hooks and the CLI load fresh source on every call; this process loaded its
+ * modules once. After a `git pull` the two disagree silently — so the launchd
+ * job exits (non-zero, via the stop path) and KeepAlive brings it back on the
+ * new code. A manual run has nobody to restart it, so it only says so.
+ */
+function checkDrift(ctx: DispatcherCtx): void {
+  const disk = installCommit();
+  const decision = decideDrift({
+    bootCommit: ctx.bootCommit,
+    diskCommit: disk,
+    previousDiskCommit: ctx.lastDiskCommit,
+    underLaunchd: ctx.launchd,
+  });
+  ctx.lastDiskCommit = disk;
+  if (decision.action === "restart") {
+    ctx.restartReason = `code changed ${shortSha(decision.from)} → ${shortSha(decision.to)}, restarting`;
+  } else if (decision.action === "report" && ctx.reportedDrift !== decision.to) {
+    log(ctx, `code changed ${shortSha(decision.from)} → ${shortSha(decision.to)} on disk; this dispatcher still runs the old code — restart it to pick that up`);
+    ctx.reportedDrift = decision.to;
+  }
+}
+
+export async function runDispatcher(opts: {
+  once?: boolean;
+  verbose?: boolean;
+  /**
+   * Whether this process is the launchd job (may exit to pick up new code).
+   * Detected from the environment; injectable because XPC_SERVICE_NAME cannot
+   * be faked — libxpc aborts any process that sets it outside launchd.
+   */
+  launchd?: boolean;
+}): Promise<number> {
   ensureDataDirs();
   const config = loadConfig();
 
@@ -116,8 +175,9 @@ export async function runDispatcher(opts: { once?: boolean; verbose?: boolean })
     return 1;
   }
 
-  const ctx = createCtx(config, opts.verbose ?? false);
-  log(ctx, `dispatcher started (pid ${process.pid}, poll ${config.dispatch.pollIntervalSec}s, wip ${config.dispatch.wipLimit})`);
+  const ctx = createCtx(config, opts.verbose ?? false, installCommit());
+  ctx.launchd = opts.launchd ?? underLaunchd();
+  log(ctx, `dispatcher started (pid ${process.pid}, poll ${config.dispatch.pollIntervalSec}s, wip ${config.dispatch.wipLimit}, code ${shortSha(ctx.bootCommit)})`);
 
   // Released on the way out below; a stop we never see is what `-w` is for.
   const releaseAwake = !opts.once && config.dispatch.keepAwake ? keepAwake((m) => log(ctx, m)) : null;
@@ -137,6 +197,10 @@ export async function runDispatcher(opts: { once?: boolean; verbose?: boolean })
       await tick(ctx);
     } catch (err) {
       log(ctx, `tick error: ${(err as Error).stack ?? err}`);
+    }
+    if (ctx.restartReason && !stopping) {
+      log(ctx, ctx.restartReason);
+      stop(); // non-zero exit below: KeepAlive restarts only an unsuccessful one
     }
     if (!opts.once && !stopping) {
       await new Promise<void>((resolve) => {
@@ -168,6 +232,13 @@ export function dispatcherStatus(): number {
   console.log(`  last tick:    ${state.lastTickAt} (${age}s ago)`);
   console.log(`  wip:          ${state.wip}`);
   console.log(`  lastDecision: ${state.lastDecision}`);
+  const disk = installCommit();
+  const code = !state.commit
+    ? "unknown (dispatcher predates commit tracking)"
+    : !disk || disk === state.commit
+      ? shortSha(state.commit)
+      : `${shortSha(state.commit)} — checkout is at ${shortSha(disk)}: running OLD code (the launchd job restarts itself within two ticks; a manual run must be restarted by hand)`;
+  console.log(`  code:         ${code}`);
   const counts = new Map<string, number>();
   for (const t of listTasks()) counts.set(t.status, (counts.get(t.status) ?? 0) + 1);
   console.log(`  tasks:        ${[...counts.entries()].map(([k, v]) => `${k}=${v}`).join(" ") || "(none)"}`);

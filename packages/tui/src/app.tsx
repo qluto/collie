@@ -5,11 +5,12 @@ import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
   DEFAULT_CONFIG, blockedUntil, cancelTask, computeForecast, configPath, createTask, diffSummary,
-  discardTaskWork, discoverRepos, droppedTasks, forecastLine, formatClock, listArchived, loadConfig,
-  markDone, modeLabel, readLimits, refreshBranchScan, refreshLimits, resolveMode, retryTask, runsDir,
+  discardTaskWork, discoverRepos, droppedTasks, forecastLine, formatClock, installCommit,
+  listArchived, loadConfig, markDone, modeLabel, readLimits, readUpdateCheck, refreshBranchScan, refreshLimits, resolveMode, retryTask, runsDir,
   stripPromptTemplate, taskFilePath, transition, updateTask,
 } from "@collie/core";
-import type { Config, LimitSnapshot, Task } from "@collie/core";
+import type { Config, LimitSnapshot, Task, UpdateCheck } from "@collie/core";
+import { codeNotice } from "./notice.ts";
 import { useHubSnapshot, type HubSnapshot } from "./state.ts";
 import { Detail } from "./views/detail.tsx";
 import { AnswerForm, TaskList, orderedTasks } from "./views/tasks.tsx";
@@ -86,6 +87,19 @@ function questionFor(task: Task): string | null {
   });
 }
 
+/**
+ * The commit this TUI process loaded. Hooks and the CLI read fresh source per
+ * call, but an open TUI keeps whatever it booted with — after a pull it is the
+ * one process left on old code that nothing will restart.
+ */
+const TUI_COMMIT = installCommit();
+
+/** The installation's on-disk HEAD and the cached update check, refreshed every 60s. */
+interface CodeState {
+  diskCommit: string | null;
+  update: UpdateCheck | null;
+}
+
 interface HeaderSegment {
   text: string;
   color?: string;
@@ -103,6 +117,7 @@ function forecastHeader(
   config: Config,
   limits: LimitSnapshot | null,
   columns: number,
+  code: CodeState,
 ): HeaderSegment[] {
   const mode = resolveMode(config.schedule, new Date());
   const tickAgeSec = snap.dispatcher
@@ -120,6 +135,16 @@ function forecastHeader(
   ];
   const hardStop = blockedUntil(snap.quota);
   if (hardStop) segments.push({ text: `⛔ until ${formatClock(hardStop)}`, color: "red" });
+  // Ahead of the forecast, which is long and the first thing truncation eats.
+  const notice = codeNotice({
+    diskCommit: code.diskCommit,
+    tuiCommit: TUI_COMMIT,
+    dispatcherCommit: snap.dispatcher?.commit,
+    dispatcherAlive: alive,
+    update: code.update,
+    updateCheckEnabled: config.update.check,
+  });
+  if (notice) segments.push(notice);
   if (!limits) {
     segments.push({ text: "limits unavailable — ccusage fallback", dim: true });
   } else if (mode !== "paused") {
@@ -147,6 +172,7 @@ function App(): React.JSX.Element {
   const [focusIdx, setFocusIdx] = useState(0); // task list cursor
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [limits, setLimits] = useState<LimitSnapshot | null>(null);
+  const [code, setCode] = useState<CodeState>({ diskCommit: TUI_COMMIT, update: null });
   const [flash, setFlash] = useState("");
   const [rows, setRows] = useState(process.stdout.rows ?? 24);
   const [columns, setColumns] = useState(process.stdout.columns ?? 80);
@@ -171,6 +197,10 @@ function App(): React.JSX.Element {
     const pull = () => {
       setLimits(readLimits());
       void refreshLimits().then((r) => r.snapshot && setLimits(r.snapshot));
+      // Same clock for collie's own code: one rev-parse a minute, never per
+      // render. The update check itself is the dispatcher's (and doctor's) to
+      // run; the TUI only reads the file.
+      setCode({ diskCommit: installCommit(), update: readUpdateCheck() });
     };
     pull();
     const t = setInterval(pull, 60_000);
@@ -432,7 +462,7 @@ function App(): React.JSX.Element {
   // cursor to screen rows counted from the top (REPO_ROW, ANSWER_INPUT_ROW),
   // and an extra line above them would move the input out from under the IME.
   const headerLine =
-    overlay.kind === "none" ? forecastHeader(snap, config, limits, columns) : null;
+    overlay.kind === "none" ? forecastHeader(snap, config, limits, columns, code) : null;
   const bodyRows = rows - (headerLine ? 2 : 1);
 
   return (

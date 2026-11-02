@@ -3,12 +3,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { parseArgs } from "node:util";
 import { execFileSync } from "node:child_process";
-import { ensureDataDirs } from "@collie/core";
+import { DISPATCHER_LABEL as LABEL, ensureDataDirs } from "@collie/core";
 import { dispatcherStatus, runDispatcher } from "../dispatcher/loop.ts";
 
-const LABEL = "com.qluto.collie.dispatcher";
-
-function plistDest(): string {
+export function plistDest(): string {
   return path.join(os.homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
 }
 
@@ -49,7 +47,7 @@ function installLaunchd(): number {
  * running process first; it fails when the label isn't loaded (plist on disk
  * but booted out), so fall back to a bootstrap.
  */
-function restartLaunchd(): number {
+export function restartLaunchd(): number {
   if (!fs.existsSync(plistDest())) {
     console.error("not installed — run `collie dispatcher install`");
     return 1;

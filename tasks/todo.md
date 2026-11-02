@@ -604,3 +604,25 @@ dispatch を書き換えて実機 E2E で両パス緑。
 - 報告処理は core (`herdr/metadata.ts`) に置いた: `task complete`（セッション内で走る通常の終了経路）からも報告する必要があり、dispatcher 専用だと `$status` が running のまま残る
 - PR は push ではなく poll（`gh pr list --head`、complete 時 + tick で 3 件/10 分）。gh は絶対パス解決（launchd の PATH 問題）
 - 296 tests / tsc 緑。`~/.config/herdr/config.toml` に `rows_by_agent.claude` を追加済み、実機で tokens が pane record に載ることを確認
+
+## 2026-10-24 バージョン更新通知 + コードのドリフト検出
+
+- [x] core: `installRoot()` / `DISPATCHER_LABEL` / `gitBin()` / `installCommit()` / `installVersion()` + 純関数 `decideDrift`
+- [x] dispatcher: 起動時コミットを記録、`dispatcher.json` に `commit`、tick 末尾で launchd 配下のみ 1 tick デバウンス付き自己再起動
+- [x] `dispatcher status` に稼働コミットとドリフト表示
+- [x] core/update.ts: `ls-remote --tags` で最新 semver、24h スロットル、`update.json` キャッシュ、純関数で比較・dev 抑止
+- [x] config `[update] check = true`（DEFAULT_CONFIG / TOML / 型 / Config タブ）
+- [x] dispatcher tick 冒頭で `refreshUpdateCheck`、新バージョンは 1 回だけログ
+- [x] TUI header: ドリフト（黄）> 更新あり（シアン）を 1 セグメントだけ、git は 60s 間隔
+- [x] `collie update [--check|--now]`（拒否条件、ff-only、bun install、launchd 再起動、CHANGELOG、未記載 config セクション）
+- [x] doctor: バージョン / 更新 / dispatcher ドリフト / 未記載 config セクション
+- [x] CHANGELOG.md、README / README_ja の Releasing 節とコマンド一覧、CLAUDE.md の不変条件、package.json 0.2.0
+- [x] bun test / tsc 緑、`update --check` と `doctor` を temp COLLIE_HOME で手動確認
+
+### Review
+- ドリフト: `dispatcher.json.commit` = 起動時コミット。tick 末尾（writeState 後）に `decideDrift`（純関数）。launchd 配下（`XPC_SERVICE_NAME`）かつ同じ新 HEAD を 2 tick 連続で見たときだけ stop 経路で exit 1 → KeepAlive 再起動。手動実行はログ 1 回のみ
+- `XPC_SERVICE_NAME` を launchd 外で設定すると libxpc が bun を SIGTRAP で落とす（exit 133）ため、`runDispatcher({launchd})` を注入口にした。サンドボックス clone で実測: launchd=true は 2 tick 後に `code changed … restarting` → 1 を返す、false は 1 回ログして走り続ける
+- 更新チェックは `ls-remote --tags --refs origin` のみ（ローカル refs 不変をテストで確認）。24h スロットル、失敗でも時計は進む。HEAD が動いたらネットワーク無しでローカル半分だけ更新、`commit` が現 HEAD と違うチェック結果は TUI が無視
+- `collie update` は refuse/plan を純関数化、bare origin + clone の統合テスト（ff、pre-release 非対象、bun.lock 変化で install、plist 有無で restart、CHANGELOG (old,new]、未記載セクション、拒否時は HEAD 不変）
+- Config タブにセクション追加で 30 行では空行入りに収まらなくなったため、該当テストを 32 行に（縮退は既存の budget 処理どおり）
+- 336 tests / tsc 緑。`update --check` と `doctor` を temp COLLIE_HOME で実行確認（実 origin への ls-remote 成功、作業ツリーが dirty なので dev 扱いで通知抑止）

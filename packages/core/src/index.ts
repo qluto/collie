@@ -13,6 +13,8 @@ export * from "./presence.ts";
 export * from "./repos.ts";
 export * from "./prompt.ts";
 export * from "./git.ts";
+export * from "./install.ts";
+export * from "./update.ts";
 export * from "./pr.ts";
 export * from "./branches.ts";
 export * from "./worktree.ts";

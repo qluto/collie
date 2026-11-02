@@ -130,6 +130,13 @@ describe("config", () => {
     expect(() => parseConfig(`[dispatch]\nkeep_awake = "yes"\n`)).toThrow(ConfigError);
   });
 
+  test("update.check defaults on (own origin, read-only) and must be a boolean", () => {
+    expect(parseConfig(DEFAULT_CONFIG_TOML).update.check).toBe(true);
+    expect(parseConfig(`[dispatch]\nwip_limit = 2\n`).update.check).toBe(true); // predates [update]
+    expect(parseConfig(`[update]\ncheck = false\n`).update.check).toBe(false);
+    expect(() => parseConfig(`[update]\ncheck = "no"\n`)).toThrow(ConfigError);
+  });
+
   test("empty file yields defaults", () => {
     const c = parseConfig("");
     expect(c.dispatch.wipLimit).toBe(2);

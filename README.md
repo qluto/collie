@@ -190,7 +190,9 @@ collie doctor
 ```
 
 It verifies the data directory, the config file, the Herdr socket, the presence
-probe, Claude Code, ccusage, and the usage API.
+probe, Claude Code, ccusage, and the usage API — and reports collie's own
+version, whether a newer release exists, whether the dispatcher runs the
+checked-out code, and any config sections your `config.toml` predates.
 
 ### 3. Configure
 
@@ -227,7 +229,28 @@ tail -f ~/.collie/logs/dispatcher.log
 ```
 
 `collie dispatcher restart` picks up new code. Config edits need no restart —
-they are reloaded on the next tick.
+they are reloaded on the next tick. You rarely need the restart by hand: the
+launchd dispatcher notices when the checkout's HEAD has moved (a `git pull`,
+`collie update`) and restarts itself onto the new code at the next tick
+boundary, once the new HEAD has held still for a tick.
+
+### Updating
+
+```sh
+collie update --check     # ask origin whether a newer release tag exists
+collie update             # fast-forward this checkout to the latest release
+```
+
+Once a day the dispatcher asks the checkout's own git origin — `git ls-remote`,
+read-only — for release tags, and the TUI header shows `↑ v0.3.0 · collie update`
+when one is newer (`[update] check = false` switches that off). It never updates
+anything by itself. `collie update` refuses while the checkout has uncommitted
+changes, is not on its default branch, or tasks are running (`--now` overrides
+the last one: running sessions' hooks would switch to the new code mid-run). It
+fast-forwards to the newest `vX.Y.Z` tag, runs `bun install` when `bun.lock`
+changed, restarts the launchd dispatcher, prints the CHANGELOG entries you just
+received, and names any config section your `config.toml` predates — defaults
+apply to those until you add them.
 
 ### 5. Optional: Linear
 
@@ -426,6 +449,8 @@ collie dispatcher install | restart | uninstall      (launchd)
 
 collie linear sync [--dry-run] | status
 
+collie update [--check] [--now]  # fast-forward to the latest release tag
+
 collie new [--popup]             # the capture form alone, for a popup binding
 collie tui
 collie doctor
@@ -451,6 +476,19 @@ Linear), `packages/cli` (dispatcher, hooks, task commands), `packages/tui`
 Runtime data lives in `~/.collie/`, overridable with `COLLIE_HOME` — point it
 at a temp directory for any experiment, since a real dispatcher runs against
 the default.
+
+### Releasing
+
+1. Bump `version` in each workspace package's `package.json`
+   (`packages/core`, `packages/cli`, `packages/tui`).
+2. Move the `## [Unreleased]` notes in [CHANGELOG.md](CHANGELOG.md) under
+   `## [X.Y.Z] - YYYY-MM-DD` — `collie update` prints these sections, so the
+   heading format matters. **Call out every new config section**: `loadConfig`
+   never adds sections to an existing `config.toml`, so the changelog (and
+   `collie update`'s missing-section note) is the only way a user hears of it.
+3. Commit, then `git tag -a vX.Y.Z -m vX.Y.Z` and `git push origin main vX.Y.Z`.
+   Only plain `vX.Y.Z` tags are offered as updates; pre-release tags
+   (`v1.0.0-rc.1`) are not.
 
 ## Limitations
 

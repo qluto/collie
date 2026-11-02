@@ -2,13 +2,24 @@ import * as fs from "node:fs";
 import * as net from "node:net";
 import { spawnSync } from "node:child_process";
 import {
-  ConfigError, KEYCHAIN_SERVICE, ensureDataDirs, hubHome, inputIdleSeconds, loadConfig,
-  readApiKey, refreshLimits,
+  ConfigError, DEFAULT_CONFIG, KEYCHAIN_SERVICE, dispatcherStatePath, ensureDataDirs, hubHome, inputIdleSeconds,
+  installCommit, installRoot, installVersion, loadConfig, readApiKey, refreshLimits,
+  refreshUpdateCheck, shortSha, updateAvailable, type DispatcherState,
 } from "@collie/core";
+import { configSectionNotes } from "./update.ts";
 
 function check(label: string, ok: boolean, detail?: string): boolean {
   console.log(`${ok ? "ok " : "FAIL"}  ${label}${detail ? ` — ${detail}` : ""}`);
   return ok;
+}
+
+/** Worth knowing, never fatal: doctor still exits 0 on these. */
+function warn(label: string, detail?: string): void {
+  console.log(`warn  ${label}${detail ? ` — ${detail}` : ""}`);
+}
+
+function info(label: string, detail?: string): void {
+  console.log(`--   ${label}${detail ? ` — ${detail}` : ""}`);
 }
 
 async function herdrSocketReachable(socketPath: string): Promise<boolean> {
@@ -24,6 +35,20 @@ async function herdrSocketReachable(socketPath: string): Promise<boolean> {
   });
 }
 
+/**
+ * Boot commit of a LIVE dispatcher; undefined when unknown or the process is
+ * gone — a dead one's state file says nothing about what is running.
+ */
+function readDispatcherCommit(): string | undefined {
+  try {
+    const state = JSON.parse(fs.readFileSync(dispatcherStatePath(), "utf8")) as DispatcherState;
+    process.kill(state.pid, 0); // throws when the pid is gone
+    return state.commit;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function runDoctor(): Promise<number> {
   ensureDataDirs();
   let allOk = true;
@@ -35,6 +60,36 @@ export async function runDoctor(): Promise<number> {
     allOk = check("config.toml valid", true) && allOk;
   } catch (err) {
     allOk = check("config.toml valid", false, err instanceof ConfigError ? err.message : String(err)) && allOk;
+  }
+
+  // collie's own code: which version, is there a newer one, and is the
+  // dispatcher actually running what is on disk. None of it is fatal — an
+  // offline origin or a stale dispatcher still dispatches.
+  const disk = installCommit();
+  info("collie version", `${installVersion() ?? "untagged"} (${shortSha(disk)}) — ${installRoot()}`);
+  if (config?.update.check === false) {
+    info("update check disabled", "[update] check = false; `collie update --check` still asks");
+  } else {
+    const upd = await refreshUpdateCheck(config ?? DEFAULT_CONFIG);
+    const latest = updateAvailable(upd);
+    if (!upd) info("update check", "not run");
+    else if (upd.error) warn("update check", upd.error);
+    else if (upd.dev) info("update check", `development checkout (${upd.dev}); latest release ${upd.latest ?? "none"}`);
+    else if (latest) warn("update available", `${latest} — run \`collie update\``);
+    else check("up to date", true, upd.latest ? `latest release ${upd.latest}` : "origin has no release tags yet");
+  }
+  const dispatcherCommit = readDispatcherCommit();
+  if (dispatcherCommit && disk && dispatcherCommit !== disk) {
+    warn(
+      "dispatcher runs old code",
+      `${shortSha(dispatcherCommit)}, checkout is at ${shortSha(disk)} — the launchd job restarts itself within two ticks; otherwise \`collie dispatcher restart\``,
+    );
+  } else if (dispatcherCommit) {
+    check("dispatcher runs the checked-out code", true, shortSha(dispatcherCommit));
+  }
+  const missing = configSectionNotes();
+  if (missing.length > 0) {
+    info("config.toml sections not present", `${missing.map((m) => `[${m}]`).join(" ")} — defaults apply; add the section to change them`);
   }
 
   if (config) {

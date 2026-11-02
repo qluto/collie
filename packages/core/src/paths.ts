@@ -42,6 +42,11 @@ export function limitsStatePath(): string {
   return path.join(hubHome(), "limits.json");
 }
 
+/** Cached answer to "is there a newer collie release?" (see update.ts). */
+export function updateStatePath(): string {
+  return path.join(hubHome(), "update.json");
+}
+
 /** Which Linear issues have already become tasks, and when we last looked. */
 export function linearStatePath(): string {
   return path.join(hubHome(), "linear.json");

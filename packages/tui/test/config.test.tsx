@@ -28,7 +28,7 @@ beforeEach(() => {
 describe("ConfigView", () => {
   test("every gate the dispatcher consults has a labelled section", () => {
     const frame = frameOf(100, 30);
-    for (const label of ["🕐 schedule", "🧍 presence", "🚦 dispatch", "📊 quota", "🌱 defaults", "🐕 herdr", "📁 repos"]) {
+    for (const label of ["🕐 schedule", "🧍 presence", "🚦 dispatch", "📊 quota", "🌱 defaults", "🐕 herdr", "🆙 update", "📁 repos"]) {
       expect(frame).toContain(label);
     }
     // the two gates that used to be invisible in the TUI
@@ -48,7 +48,8 @@ describe("ConfigView", () => {
   });
 
   test("values line up in one column, sections are separated when there is room", () => {
-    const lines = bare(frameOf(100, 30));
+    // 32 rows: 10 sections need 17 lines + 9 separators + 5 fixed rows
+    const lines = bare(frameOf(100, 32));
     const starts: Array<[string, string]> = [
       ["🕐 schedule", "00:00"], ["🧍 presence", "off"], ["🚦 dispatch", "wip"],
       ["📊 quota", "session cap"], ["🌱 defaults", "permission"],
