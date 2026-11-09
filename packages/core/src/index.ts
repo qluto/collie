@@ -18,6 +18,7 @@ export * from "./update.ts";
 export * from "./pr.ts";
 export * from "./branches.ts";
 export * from "./worktree.ts";
+export * from "./teardown.ts";
 export * from "./quota/gate.ts";
 export * from "./quota/limits-api.ts";
 export * from "./quota/forecast.ts";

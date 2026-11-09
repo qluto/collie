@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 import {
-  dirtyFiles, HerdrClient, listTasks, loadConfig, markDone, showNotification, type Task,
+  HerdrClient, listTasks, loadConfig, markDone, showNotification, teardownTask, type Task,
 } from "@collie/core";
 
 /**
@@ -52,41 +52,6 @@ function configuredClose(): boolean {
 }
 
 /**
- * Tear the finished task down. For a worktree task `worktree.remove` does all
- * of it — deletes the checkout, closes the pane AND the workspace — and it
- * needs the workspace to still exist, so this must never close the pane first.
- * The branch survives either way, so nothing here can lose accepted work; a
- * dirty checkout is refused by herdr and reported back untouched.
- */
-async function teardown(task: Task): Promise<string> {
-  const client = new HerdrClient(loadConfig().herdr.socketPath);
-  const worktreePath = task.run?.worktreePath;
-  const workspaceId = task.run?.workspaceId;
-
-  if (task.worktree && worktreePath && workspaceId) {
-    const dirty = dirtyFiles(worktreePath);
-    if (dirty.length > 0) {
-      return `kept the worktree: ${dirty.length} uncommitted file(s) in ${worktreePath}`;
-    }
-    try {
-      await client.request("worktree.remove", { workspace_id: workspaceId });
-      return `worktree removed (branch ${task.branch ?? "?"} kept)`;
-    } catch (err) {
-      return `worktree.remove failed: ${(err as Error).message}`;
-    }
-  }
-  if (task.run?.paneId) {
-    try {
-      await client.request("pane.close", { pane_id: task.run.paneId });
-      return "pane closed";
-    } catch (err) {
-      return `pane.close failed: ${(err as Error).message}`;
-    }
-  }
-  return "nothing to close";
-}
-
-/**
  * The command's only exit channel. Bound to a herdr key, `collie done` runs
  * detached — stderr goes nowhere — so a failure that does not become a toast
  * is indistinguishable from the key doing nothing at all. Every throw has to
@@ -116,7 +81,7 @@ export async function runDoneCommand(argv: string[]): Promise<number> {
     let closed: string | undefined;
     const wantClose = values.close || configuredClose();
     if (wantClose) {
-      closed = await teardown(task);
+      closed = await teardownTask(task, new HerdrClient(loadConfig().herdr.socketPath));
       console.log(`  ${closed}`);
     }
     // pointless when the pane just went away with the teardown

@@ -422,7 +422,7 @@ needs no id, and it is idempotent.
 | non-worktree task | the pane is closed |
 | uncommitted changes | nothing happens; the count is reported |
 
-`[done] close = true` makes that the default.
+`[done] close = true` makes that the default — for `collie done` and for `d` in the TUI alike.
 
 ### Cleaning up
 
