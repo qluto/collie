@@ -253,7 +253,6 @@ function App(): React.JSX.Element {
       return;
     }
     refresh();
-    flashMsg(`${done.id} → done, closing…`);
     void teardownTask(done, new HerdrClient(config.herdr.socketPath)).then((outcome) => {
       flashMsg(`${done.id} → done (${outcome})`);
       refresh();

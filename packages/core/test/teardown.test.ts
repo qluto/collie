@@ -66,6 +66,14 @@ describe("teardownTask", () => {
     expect(out).toContain("kept the worktree: 1 uncommitted file(s)");
   });
 
+  test("a worktree.remove failure is reported, not thrown", async () => {
+    const out = await teardownTask(
+      task({ worktree: true, run: { worktreePath: cleanCheckout(), workspaceId: "w1" } as Task["run"] }),
+      recorder("busy"),
+    );
+    expect(out).toBe("worktree.remove failed: busy");
+  });
+
   test("a non-worktree task has just its pane closed", async () => {
     const herdr = recorder();
     const out = await teardownTask(task({ run: { paneId: "p1" } as Task["run"] }), herdr);
