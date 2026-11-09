@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import {
-  HerdrError, announceStart, getTask, headCommit, reportTaskMetadata, resolveWorktreeBase,
+  HerdrError, announceStart, getTask, headCommit, reportTaskMetadata, taskLabel, resolveWorktreeBase,
   runPostCreate, runsDir, transition, updateTask, worktreeSettingsFor,
 } from "@collie/core";
 import type { Task } from "@collie/core";
@@ -85,7 +85,7 @@ async function createTaskPane(
     ...(target.workspaceId ? { workspace_id: target.workspaceId } : {}),
     cwd,
     env,
-    label: task.id,
+    label: taskLabel(task),
     focus: false,
   });
   const paneId = rootPaneOf(res);
@@ -173,7 +173,7 @@ async function ensureWorktree(ctx: DispatcherCtx, task: Task): Promise<WorktreeR
   };
   try {
     const res = await ctx.herdr.request<WtResponse>("worktree.create", {
-      cwd: task.repo, branch, path: wtPath, label: task.id, focus: false,
+      cwd: task.repo, branch, path: wtPath, label: taskLabel(task), focus: false,
       // create only: worktree.open reopens a checkout that already forked.
       ...(base ? { base: base.ref } : {}),
     });
@@ -190,7 +190,7 @@ async function ensureWorktree(ctx: DispatcherCtx, task: Task): Promise<WorktreeR
     // Branch/path may exist from a previous attempt — reopen it.
     try {
       const res = await ctx.herdr.request<WtResponse>("worktree.open", {
-        cwd: task.repo, path: wtPath, label: task.id, focus: false,
+        cwd: task.repo, path: wtPath, label: taskLabel(task), focus: false,
       });
       // No rootPaneId here on purpose: reopening can hand back a workspace that
       // was already open, whose root pane may be one a human is using. Only a
@@ -304,7 +304,7 @@ export async function dispatchTask(ctx: DispatcherCtx, task: Task): Promise<void
   for (;;) {
     try {
       await ctx.herdr.request("agent.start", {
-        name: task.id, // names must be unique among live agents; the id doubles as a sidebar label
+        name: task.id, // names must be unique among live agents and match [a-z][a-z0-9_-]{0,31}; labels carry the title
         kind: "claude",
         pane_id: paneId,
         // native claude flags: 0.8.0 launches the agent itself, argv is gone

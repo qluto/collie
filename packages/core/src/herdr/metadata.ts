@@ -1,6 +1,23 @@
 import { getTask, updateTask } from "../store.ts";
 import type { HerdrClient } from "./client.ts";
 
+const LABEL_MAX = 40;
+
+/**
+ * What a human reads in herdr's workspace / tab / pane labels: the task's
+ * title, not its id. The id is machine-made (`t-20261109-a3f2`) and already
+ * shows as the agent NAME on the same sidebar row — that field is pinned to
+ * `[a-z][a-z0-9_-]{0,31}` and must stay the id, but labels are free text.
+ * Capped by code point so a pasted paragraph cannot become a label; herdr
+ * clips to the column itself. An empty title falls back to the id.
+ */
+export function taskLabel(task: { id: string; title?: string }): string {
+  const title = (task.title ?? "").replace(/\s+/g, " ").trim();
+  if (!title) return task.id;
+  const chars = [...title];
+  return chars.length > LABEL_MAX ? `${chars.slice(0, LABEL_MAX - 1).join("")}…` : title;
+}
+
 /**
  * Push a task's identity into herdr's sidebar row for its pane.
  *

@@ -12,6 +12,13 @@ heading shape.
   suits an unattended run, how to write its prompt, and how to register and
   check tasks. Link it into `~/.claude/skills` (see the README).
 
+### Changed
+- herdr workspaces, tabs and panes that collie creates are now labelled with
+  the task's title instead of its id (`t-20261109-a3f2`), so the sidebar says
+  which task each one is. Titles are capped at 40 characters. The agent name is
+  still the id, because herdr only allows `[a-z0-9_-]` there. Panes that are
+  already running keep their old labels.
+
 ### Fixed
 - `collie --help` now lists `task add --model`.
 - `[done] close = true` now applies to `d` in the TUI too, not only to

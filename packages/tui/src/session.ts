@@ -1,5 +1,5 @@
 import * as fs from "node:fs";
-import { HerdrClient, loadConfig, type Task } from "@collie/core";
+import { HerdrClient, loadConfig, taskLabel, type Task } from "@collie/core";
 
 interface CreatedWorkspace {
   root_pane?: { pane_id?: string };
@@ -28,7 +28,7 @@ export async function openSession(task: Task): Promise<string> {
   const client = new HerdrClient(loadConfig().herdr.socketPath);
   const ws = await client.request<CreatedWorkspace>("workspace.create", {
     cwd,
-    label: `↩ ${task.id}`,
+    label: `↩ ${taskLabel(task)}`,
     focus: true,
   });
   const paneId = ws.root_pane?.pane_id ?? ws.pane?.id;

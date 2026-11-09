@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 import {
-  HerdrClient, listTasks, loadConfig, markDone, showNotification, teardownTask, type Task,
+  HerdrClient, listTasks, loadConfig, markDone, showNotification, taskLabel, teardownTask, type Task,
 } from "@collie/core";
 
 /**
@@ -34,10 +34,10 @@ function resolveTaskId(explicit: string | undefined): { id: string } | { error: 
  * name only — `agent.list`'s `name` (which must stay unique for agent.start)
  * is a separate field and is untouched by pane.rename.
  */
-async function markPaneDone(paneId: string, taskId: string): Promise<void> {
+async function markPaneDone(paneId: string, task: Task): Promise<void> {
   try {
     const client = new HerdrClient(loadConfig().herdr.socketPath);
-    await client.request("pane.rename", { pane_id: paneId, label: `✓ ${taskId}` });
+    await client.request("pane.rename", { pane_id: paneId, label: `✓ ${taskLabel(task)}` });
   } catch {
     // decoration is never worth failing the command over
   }
@@ -85,7 +85,7 @@ export async function runDoneCommand(argv: string[]): Promise<number> {
       console.log(`  ${closed}`);
     }
     // pointless when the pane just went away with the teardown
-    if (!wantClose && task.run?.paneId) await markPaneDone(task.run.paneId, task.id);
+    if (!wantClose && task.run?.paneId) await markPaneDone(task.run.paneId, task);
 
     const body = closed ? `${task.title} → done (${closed})` : `${task.title} → done`;
     if (!(await showNotification(body, "done"))) {
