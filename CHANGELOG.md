@@ -14,6 +14,9 @@ heading shape.
 
 ### Fixed
 - `collie --help` now lists `task add --model`.
+- `[done] close = true` now applies to `d` in the TUI too, not only to
+  `collie done`: finishing a task from the TUI removes its worktree (or closes
+  its pane) instead of leaving herdr workspaces to pile up. (#1)
 
 ## [0.2.0] - 2026-10-24
 
