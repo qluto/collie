@@ -5,9 +5,9 @@ import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
   DEFAULT_CONFIG, blockedUntil, cancelTask, computeForecast, configPath, createTask, diffSummary,
-  discardTaskWork, discoverRepos, droppedTasks, forecastLine, formatClock, installCommit,
+  discardTaskWork, discoverRepos, droppedTasks, forecastLine, formatClock, HerdrClient, installCommit,
   listArchived, loadConfig, markDone, modeLabel, readLimits, readUpdateCheck, refreshBranchScan, refreshLimits, resolveMode, retryTask, runsDir,
-  stripPromptTemplate, taskFilePath, transition, updateTask,
+  stripPromptTemplate, taskFilePath, teardownTask, transition, updateTask,
 } from "@collie/core";
 import type { Config, LimitSnapshot, Task, UpdateCheck } from "@collie/core";
 import { codeNotice } from "./notice.ts";
@@ -243,6 +243,23 @@ function App(): React.JSX.Element {
     }
   };
 
+  /** `d` under `[done] close = true`: the same teardown `collie done` does. */
+  const markDoneAndClose = (task: Task) => {
+    let done: Task;
+    try {
+      done = markDone(task.id, { source: "tui" });
+    } catch (err) {
+      flashMsg((err as Error).message);
+      return;
+    }
+    refresh();
+    flashMsg(`${done.id} → done, closing…`);
+    void teardownTask(done, new HerdrClient(config.herdr.socketPath)).then((outcome) => {
+      flashMsg(`${done.id} → done (${outcome})`);
+      refresh();
+    });
+  };
+
   /**
    * Back into a finished task's conversation. The pane it ran in is usually
    * gone by now (adoption closes it), so this makes a new one — what survives
@@ -403,8 +420,10 @@ function App(): React.JSX.Element {
           void focusPane(paneId).catch((err) => flashMsg(`jump failed: ${(err as Error).message}`));
         }
       } else if (input === "d" && task) {
-        if (task.status === "review") act(() => markDone(task.id, { source: "tui" }));
-        else flashMsg("d promotes a reviewed task to done");
+        if (task.status === "review") {
+          if (config.done.close) markDoneAndClose(task);
+          else act(() => markDone(task.id, { source: "tui" }));
+        } else flashMsg("d promotes a reviewed task to done");
       } else if (input === "a" && task) {
         if (task.status === "blocked" && task.run?.paneId) setOverlay({ kind: "answer", taskId: task.id });
         else flashMsg("a answers a task blocked on a question");
