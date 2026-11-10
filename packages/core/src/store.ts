@@ -217,6 +217,8 @@ export function createTask(input: NewTaskInput, opts?: { source?: string }): Tas
     maxAttempts: input.maxAttempts ?? config.dispatch.maxAttempts,
     rev: 0,
     origin: input.origin,
+    // only ever `true` on disk: absent is the default (wait for the window)
+    ...(input.startNow ? { startNow: true } : {}),
     prompt: input.prompt,
   };
   if (task.worktree) task.branch = `collie/${task.id}`;

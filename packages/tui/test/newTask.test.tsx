@@ -135,26 +135,30 @@ describe("NewTaskForm", () => {
     expect(rows[titleRow]!.indexOf("fix the parser")).toBe(14);
   });
 
-  test("h/l pick the size, then the model, and Enter submits", async () => {
+  test("h/l pick the size, the model, then the start, and Enter submits", async () => {
     const drafts: NewTaskDraft[] = [];
     const app = await driveToSize((d) => drafts.push(d));
     await type(app.stdin, "h", "\r"); // size S, on to the model step
     expect(strip(app.lastFrame()!)).toContain("[(default)]");
-    expect(strip(app.lastFrame()!)).toContain("h/l model · Enter creates & opens $EDITOR");
+    expect(strip(app.lastFrame()!)).toContain("h/l model · Enter next");
     await type(app.stdin, "l", "l", "l", "l", "\r"); // clamps at the last choice
+    expect(strip(app.lastFrame()!)).toContain("[in window]");
+    expect(strip(app.lastFrame()!)).toContain("Enter creates & opens $EDITOR");
+    expect(drafts).toEqual([]); // the start step is still ahead
+    await type(app.stdin, "l", "l", "\r");
     app.unmount();
     expect(drafts).toEqual([
-      { repo: "/tmp/repo-two", title: "fix the parser", size: "S", model: "fable" },
+      { repo: "/tmp/repo-two", title: "fix the parser", size: "S", model: "fable", startNow: true },
     ]);
   });
 
-  test("Enter straight through keeps the default size and names no model", async () => {
+  test("Enter straight through keeps the default size, names no model, waits for the window", async () => {
     const drafts: NewTaskDraft[] = [];
     const app = await driveToSize((d) => drafts.push(d));
-    await type(app.stdin, "\r", "\r");
+    await type(app.stdin, "\r", "\r", "\r");
     app.unmount();
     expect(drafts).toEqual([
-      { repo: "/tmp/repo-two", title: "fix the parser", size: "M", model: undefined },
+      { repo: "/tmp/repo-two", title: "fix the parser", size: "M", model: undefined, startNow: false },
     ]);
   });
 

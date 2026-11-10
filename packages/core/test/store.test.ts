@@ -64,6 +64,18 @@ describe("store basics", () => {
     expect(createTask({ title: "c", repo: REPO, prompt: "p", model: "  " }).model).toBeUndefined();
   });
 
+  // Absent is the default (wait for the schedule window); only `true` is stored.
+  test("startNow at creation round-trips, and the default writes no key", () => {
+    const now = createTask({ title: "a", repo: REPO, prompt: "p", startNow: true });
+    expect(now.status).toBe("queued");
+    expect(getTask(now.id)!.startNow).toBe(true);
+    expect(serializeTask(getTask(now.id)!)).toContain("startNow: true");
+
+    const later = createTask({ title: "b", repo: REPO, prompt: "p", startNow: false });
+    expect(getTask(later.id)!.startNow).toBeUndefined();
+    expect(serializeTask(getTask(later.id)!)).not.toContain("startNow");
+  });
+
   test("markDone: review -> done, running routes through review, idempotent", () => {
     const reviewed = createTask({ title: "a", repo: REPO, prompt: "p" });
     transition(reviewed.id, "running");

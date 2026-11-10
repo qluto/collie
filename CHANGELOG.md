@@ -11,6 +11,11 @@ heading shape.
 - `skills/collie`: a Claude Code skill covering the agent-facing CLI — when work
   suits an unattended run, how to write its prompt, and how to register and
   check tasks. Link it into `~/.claude/skills` (see the README).
+- A new task can start right away instead of waiting for the schedule window:
+  the capture form (TUI `n` and `collie new`) ends with a `start:` step
+  (`in window` by default, or `now`), and `collie task add` takes `--now`. It is
+  the same start-now the task list's `s` already offered, so it skips the
+  schedule, presence, WIP and quota gates but still waits out a real limit hit.
 
 ### Changed
 - herdr workspaces, tabs and panes that collie creates are now labelled with

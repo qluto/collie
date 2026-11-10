@@ -314,10 +314,11 @@ function App(): React.JSX.Element {
           prompt,
           size: draft.size,
           model: draft.model,
+          startNow: draft.startNow,
         },
         { source: "tui" },
       );
-      flashMsg(`created ${t.id} (${t.status})`);
+      flashMsg(`created ${t.id} (${t.startNow ? "starting now" : t.status})`);
     });
   };
 

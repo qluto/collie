@@ -19,12 +19,16 @@ export interface NewTaskDraft {
   size: TaskSize;
   /** undefined = whatever config (or claude itself) defaults to */
   model?: string;
+  /** true = dispatch on the next tick, past the schedule window (Task.startNow) */
+  startNow: boolean;
 }
 
 const SIZES: TaskSize[] = ["S", "M", "L"];
+// index 0 is the default: a task in collie is unattended work for the window
+const STARTS = ["in window", "now"];
 
 /**
- * Four-question capture: where, what, how big, on which model. Everything else (worktree,
+ * Five-question capture: where, what, how big, on which model, when. Everything else (worktree,
  * permission mode, priority) is a config default — a toss-in must cost under
  * ten seconds. On submit the parent opens $EDITOR for the prompt body and
  * creates the task, already queued.
@@ -39,7 +43,7 @@ export function NewTaskForm(props: {
   onSubmit: (draft: NewTaskDraft) => void;
   onCancel: () => void;
 }): React.JSX.Element {
-  // 0 repo, 1 title, 2 size, 3 model
+  // 0 repo, 1 title, 2 size, 3 model, 4 start
   const [step, setStep] = useState(0);
   const [repo, setRepo] = useState("");
   const [repoSel, setRepoSel] = useState(0); // index into candidates; -1 = free text
@@ -47,6 +51,7 @@ export function NewTaskForm(props: {
   const [sizeIdx, setSizeIdx] = useState(1);
   // index 0 is "(default)" — no --model flag, i.e. whatever config/claude picks
   const [modelIdx, setModelIdx] = useState(0);
+  const [startIdx, setStartIdx] = useState(0);
   const models = useMemo(() => ["(default)", ...(props.modelChoices ?? [])], [props.modelChoices]);
 
   // typed text filters the known repos (case-insensitive substring on the
@@ -98,12 +103,19 @@ export function NewTaskForm(props: {
     if (step === 3) {
       if (key.leftArrow || input === "h") setModelIdx((i) => Math.max(0, i - 1));
       if (key.rightArrow || input === "l") setModelIdx((i) => Math.min(models.length - 1, i + 1));
+      if (key.return) setStep(4);
+      return;
+    }
+    if (step === 4) {
+      if (key.leftArrow || input === "h") setStartIdx(0);
+      if (key.rightArrow || input === "l") setStartIdx(1);
       if (key.return) {
         props.onSubmit({
           repo: repo.trim(),
           title: title.trim(),
           size: SIZES[sizeIdx]!,
           model: modelIdx > 0 ? models[modelIdx] : undefined,
+          startNow: startIdx === 1,
         });
       }
     }
@@ -179,6 +191,12 @@ export function NewTaskForm(props: {
           {choice(models, modelIdx)}
         </Text>
       )}
+      {step >= 4 && (
+        <Text>
+          <Text dimColor>{"start:      "}</Text>
+          {choice(STARTS, startIdx)}
+        </Text>
+      )}
       <Text dimColor>
         {step === 0
           ? "type to filter, ↑↓ to pick (↑ past top = free input), Enter to confirm"
@@ -186,7 +204,9 @@ export function NewTaskForm(props: {
             ? "type + Enter"
             : step === 2
               ? "h/l size · Enter next"
-              : "h/l model · Enter creates & opens $EDITOR"}
+              : step === 3
+                ? "h/l model · Enter next"
+                : "h/l start (now skips schedule/quota) · Enter creates & opens $EDITOR"}
         {" · Esc cancel"}
       </Text>
     </Box>

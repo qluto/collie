@@ -27,6 +27,7 @@ Usage:
   collie task add --repo <path> --title <t> [--size S|M|L] [--priority N]
                      [--model <name>] [--no-worktree] [--permission-mode <m>]
                      [--prompt <text>]           (omit --prompt to open $EDITOR)
+                     [--now]                     (start now, past schedule/quota gates)
   collie task list [--status s1,s2] [--json]
   collie task show <id>
   collie task queue|retry|cancel|done <id>

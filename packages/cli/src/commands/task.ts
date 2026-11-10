@@ -53,6 +53,7 @@ export async function runTaskCommand(argv: string[]): Promise<number> {
           priority: { type: "string", default: "100" },
           "no-worktree": { type: "boolean", default: false },
           "permission-mode": { type: "string" },
+          now: { type: "boolean", default: false },
         },
       });
       if (!values.repo) die("--repo is required");
@@ -80,8 +81,9 @@ export async function runTaskCommand(argv: string[]): Promise<number> {
         priority: Number(values.priority),
         worktree: values["no-worktree"] ? false : undefined,
         permissionMode: values["permission-mode"] as PermissionMode | undefined,
+        startNow: values.now,
       });
-      console.log(`created ${task.id} (${task.status})`);
+      console.log(`created ${task.id} (${task.status}${task.startNow ? ", starting now" : ""})`);
       return 0;
     }
     case "list": {

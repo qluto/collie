@@ -121,6 +121,8 @@ export interface NewTaskInput {
   claudeArgs?: string[];
   maxAttempts?: number;
   origin?: TaskOrigin;
+  /** Created with start-now already requested (see Task.startNow); default = wait for the schedule window. */
+  startNow?: boolean;
 }
 
 export interface ScheduleWindow {

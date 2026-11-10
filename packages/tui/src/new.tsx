@@ -113,11 +113,11 @@ export async function runNewTask(opts: { popup?: boolean } = {}): Promise<number
   let task;
   try {
     task = createTask(
-      { title: draft.title, repo: draft.repo, prompt, size: draft.size, model: draft.model },
+      { title: draft.title, repo: draft.repo, prompt, size: draft.size, model: draft.model, startNow: draft.startNow },
       { source: opts.popup ? "popup" : "cli" },
     );
   } catch (err) {
     return finish(1, `not created: ${(err as Error).message}`, "request");
   }
-  return finish(0, `queued ${task.id} · ${task.title}`, "done");
+  return finish(0, `${task.startNow ? "starting now" : "queued"} ${task.id} · ${task.title}`, "done");
 }
