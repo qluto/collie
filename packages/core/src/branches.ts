@@ -86,7 +86,10 @@ export function refreshBranchScan(opts?: { maxAgeSec?: number }): BranchScan {
       const id = name.slice(BRANCH_PREFIX.length);
       const task = live.get(id);
       if (!merged.has(name)) {
-        if (!task) scan.dropped.push(id);
+        // A branch still sitting on its birth commit holds no work, so there is
+        // nothing to have dropped — the agent may well have shipped through a
+        // branch of another name. Unknown birth (reflog gone) stays dropped.
+        if (!task && forkPoint(repo, name) !== tip) scan.dropped.push(id);
         continue;
       }
       // Merged, but a branch that never got a commit of its own is merged

@@ -17,21 +17,29 @@ function git(repoRoot: string, args: string[]): GitResult {
 }
 
 /**
- * Branches already contained in the repo's checked-out HEAD. That is the branch
- * a human would call "merged": collie never learns a project's integration
- * branch, and `origin/HEAD` is absent in plenty of repos.
+ * Branches contained in the checked-out HEAD OR in origin's default branch, as
+ * last fetched. HEAD alone is wrong in the common case: dispatch forks a task
+ * from a freshly fetched `origin/<default>`, so while the human's local main
+ * lags behind it, every task branch is "unmerged" from birth — and a PR merged
+ * on GitHub never reaches HEAD until someone pulls. origin/HEAD is absent in
+ * plenty of repos, which leaves exactly the HEAD answer.
  */
 export function mergedBranches(repoRoot: string): string[] {
-  // --format must precede --merged: --merged takes an optional commit argument
-  // and otherwise swallows the next token ("malformed object name --format=…").
-  const res = git(repoRoot, ["branch", "--format=%(refname:short)", "--merged", "HEAD"]);
-  return res.ok ? res.out.split("\n").map((b) => b.trim()).filter(Boolean) : [];
+  const merged = new Set<string>();
+  for (const into of ["HEAD", "refs/remotes/origin/HEAD"]) {
+    // --format must precede --merged: --merged takes an optional commit argument
+    // and otherwise swallows the next token ("malformed object name --format=…").
+    const res = git(repoRoot, ["branch", "--format=%(refname:short)", "--merged", into]);
+    if (!res.ok) continue; // no origin/HEAD: not an error, just one fewer place to have landed
+    for (const b of res.out.split("\n")) if (b.trim()) merged.add(b.trim());
+  }
+  return [...merged];
 }
 
 export interface BranchState {
   /** branch name -> tip commit; its keys are "does this branch still exist". */
   tips: Map<string, string>;
-  /** branches HEAD already contains (see mergedBranches). */
+  /** branches HEAD or origin's default already contains (see mergedBranches). */
   merged: Set<string>;
 }
 

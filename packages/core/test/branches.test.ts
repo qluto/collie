@@ -105,6 +105,39 @@ describe("branch scan", () => {
     expect(refreshBranchScan({ maxAgeSec: 0 }).dropped).toEqual([]);
   });
 
+  test("work that landed on origin's default is merged even while local main lags", () => {
+    // Dispatch forks from a freshly fetched origin/main; the human's checkout
+    // only catches up when they pull. A PR merged on GitHub is in origin/main
+    // after the next fetch and in HEAD only after a pull — the former has to count.
+    const id = reviewTask();
+    git(repo, "update-ref", "refs/remotes/origin/main", `collie/${id}`);
+    git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+    expect(refreshBranchScan({ maxAgeSec: 0 }).adoptable).toEqual([id]);
+
+    transition(id, "done");
+    expect(refreshBranchScan({ maxAgeSec: 0 }).dropped).toEqual([]);
+  });
+
+  test("a done branch that never got a commit is not dropped, even forked ahead of HEAD", () => {
+    // Forked from an origin/main the local checkout has not pulled, it is not
+    // contained in HEAD — yet it holds no work, so there is nothing to drop.
+    const ahead = `${repo}-ahead`;
+    git(repo, "worktree", "add", "-q", "-b", "upstream", ahead);
+    commit(ahead, "upstream.txt", "someone else's work\n");
+    const task = createTask({ title: "t", repo, prompt: "p", worktree: true });
+    git(repo, "branch", `collie/${task.id}`, "upstream");
+    transition(task.id, "running", { baseCommit: headCommit(ahead)! });
+    transition(task.id, "review");
+    transition(task.id, "done");
+    expect(refreshBranchScan({ maxAgeSec: 0 }).dropped).toEqual([]);
+
+    // the same branch with a commit of its own is dropped as before
+    const wt = `${repo}-wt-${task.id}`;
+    git(repo, "worktree", "add", "-q", wt, `collie/${task.id}`);
+    commit(wt, "work.txt", "work\n");
+    expect(refreshBranchScan({ maxAgeSec: 0 }).dropped).toEqual([task.id]);
+  });
+
   test("a live task's unmerged branch is not dropped", () => {
     const id = reviewTask();
     expect(refreshBranchScan({ maxAgeSec: 0 }).dropped).toEqual([]);

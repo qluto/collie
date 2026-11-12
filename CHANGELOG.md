@@ -7,6 +7,8 @@ heading shape.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-12
+
 ### Added
 - `skills/collie`: a Claude Code skill covering the agent-facing CLI — when work
   suits an unattended run, how to write its prompt, and how to register and
@@ -29,6 +31,14 @@ heading shape.
 - `[done] close = true` now applies to `d` in the TUI too, not only to
   `collie done`: finishing a task from the TUI removes its worktree (or closes
   its pane) instead of leaving herdr workspaces to pile up. (#1)
+- A task whose PR was merged on GitHub no longer shows as 🗑 Dropped just
+  because the local checkout has not been pulled. Merged now means contained in
+  HEAD *or* in origin's default branch (`origin/HEAD`, as last fetched), the same
+  ref dispatch forks from — so a local main lagging behind it made every task
+  branch look unmerged from birth. The same check lets a `review` task whose
+  branch landed upstream move to done on its own.
+- A branch with no commits of its own (e.g. the agent shipped through a branch
+  of another name) is no longer reported as dropped.
 
 ## [0.2.0] - 2026-10-24
 

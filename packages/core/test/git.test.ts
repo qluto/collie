@@ -46,6 +46,20 @@ describe("git helpers", () => {
     expect(fs.existsSync(wt)).toBe(false);
   });
 
+  test("mergedBranches also counts what origin's default branch contains", () => {
+    run(repo, "branch", "collie/landed");
+    const wt = path.join(repo, "..", path.basename(repo) + "-wt2");
+    run(repo, "worktree", "add", "-q", wt, "collie/landed");
+    commit(wt, "landed.txt", "work\n");
+    expect(mergedBranches(repo)).not.toContain("collie/landed"); // no origin/HEAD: HEAD only
+
+    run(repo, "update-ref", "refs/remotes/origin/main", "collie/landed");
+    run(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+    expect(mergedBranches(repo)).toContain("collie/landed"); // merged upstream, not yet pulled
+    expect(mergedBranches(repo)).toContain("main");
+    removeWorktree(repo, wt);
+  });
+
   test("a vanished branch is null, not zero commits ahead", () => {
     // gc reads "0 ahead" as unmerged work it must keep; a branch a human already
     // merged and deleted has to be distinguishable from that.
