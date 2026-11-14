@@ -134,7 +134,9 @@ export function discardTaskWork(task: Task): { ok: boolean; message: string } {
 }
 
 /**
- * The dropped set as whole tasks, newest first. Reads only those few archived
+ * The dropped set as whole tasks, newest first. A task whose pull request
+ * merged is not dropped even though git calls its branch unmerged: that is a
+ * squash or rebase merge, which leaves the branch tip out of main for good. Reads only those few archived
  * files by id — the scan comes from the branch side, so nothing here walks the
  * archive, which is the one directory that grows without bound.
  */
@@ -142,6 +144,6 @@ export function droppedTasks(opts?: { maxAgeSec?: number }): Task[] {
   return refreshBranchScan(opts)
     .dropped
     .map((id) => getTask(id))
-    .filter((t): t is Task => t !== null && t.status === "done")
+    .filter((t): t is Task => t !== null && t.status === "done" && t.run?.prState !== "MERGED")
     .sort((a, b) => (b.endedAt ?? b.updatedAt).localeCompare(a.endedAt ?? a.updatedAt));
 }

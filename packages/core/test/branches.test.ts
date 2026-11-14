@@ -105,6 +105,14 @@ describe("branch scan", () => {
     expect(refreshBranchScan({ maxAgeSec: 0 }).dropped).toEqual([]);
   });
 
+  test("a squash-merged pull request is not dropped though git calls the branch unmerged", () => {
+    const id = reviewTask();
+    // what dispatcher/pr.ts records when it adopts a task off a merged PR
+    transition(id, "done", { prNumber: 1, prUrl: "u", prState: "MERGED" });
+    expect(refreshBranchScan({ maxAgeSec: 0 }).dropped).toEqual([id]);
+    expect(droppedTasks({ maxAgeSec: 0 })).toEqual([]);
+  });
+
   test("work that landed on origin's default is merged even while local main lags", () => {
     // Dispatch forks from a freshly fetched origin/main; the human's checkout
     // only catches up when they pull. A PR merged on GitHub is in origin/main

@@ -50,6 +50,12 @@ export interface TaskRun {
   prNumber?: number;
   prUrl?: string;
   /**
+   * GitHub's state for that PR as of prCheckedAt. Recorded because a squash or
+   * rebase merge is a fact git cannot re-derive: the branch never becomes
+   * contained in main, and without this the task would read as 🗑 Dropped.
+   */
+  prState?: "OPEN" | "CLOSED" | "MERGED";
+  /**
    * When gh was last asked. Written whether or not a PR was found, so a branch
    * without one is re-checked on a slow clock instead of every tick.
    */

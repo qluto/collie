@@ -7,6 +7,18 @@ heading shape.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-14
+
+### Added
+- A review task whose pull request is merged into the repository's default
+  branch now moves to done on its own, the same way a branch merged into HEAD
+  already did. This covers squash and rebase merges (where the branch never
+  becomes part of main) and merges on GitHub that no local fetch has brought in
+  yet. The dispatcher re-checks a review task's PR with `gh` at most every 10
+  minutes. A PR merged into any other branch does not count, and running or
+  blocked tasks are left alone until they reach review. Tasks closed this way
+  are no longer listed as 🗑 Dropped.
+
 ## [0.3.0] - 2026-11-12
 
 ### Added

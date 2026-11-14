@@ -371,7 +371,7 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
   branch HEAD already contains straight to `done` (`source: merge-detect`) —
   and what is left in `done` with an unmerged branch is therefore work the human
   looked at and dropped, which the list shows as `🗑 Dropped` (`x` discards,
-  `u` reopens). Three constraints hold that up:
+  `u` reopens). Four constraints hold that up:
   1. The branch's BIRTH COMMIT is what makes "contained in HEAD" mean "landed":
      a branch that never got a commit is contained from birth, and
      auto-completing it would archive a task — an uncommitted plan, say — no
@@ -390,6 +390,15 @@ The CLI and the wire are NOT the same surface: `pane run` exists in the CLI,
      grows. Its repo roster lives in `branches.json`, seeded from the working
      set and kept while any collie branch survives; only a cold start (no file
      yet) reads a bounded slice of the archive to find repos at all.
+  4. The PULL REQUEST is the second witness, for what containment cannot see:
+     a squash/rebase merge never puts the branch tip in main, and a GitHub
+     merge is invisible until something fetches. `checkPullRequests` keeps
+     re-asking a review task's PR (10min clock, shared 3/tick budget) and
+     `pullRequestLanded` adopts it only when `state = MERGED` AND `baseRefName`
+     is the default branch (`origin/HEAD`, else `gh repo view`; unknown = not
+     landed). That one fact IS recorded — `run.prState` — because git cannot
+     re-derive it, and `droppedTasks` reads it so a squash-merged task is not
+     shown as 🗑 Dropped.
   Adoption also RECLAIMS the pane (`pane.close`, which takes the workspace with
   it) and clears `run.paneId` in the same transition patch — the last chance to,
   since an archived task is out of `updateTask`'s reach. The worktree is left
