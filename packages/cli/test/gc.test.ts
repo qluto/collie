@@ -95,6 +95,33 @@ describe("collie gc", () => {
     expect(fs.existsSync(worktreePath)).toBe(false);
   });
 
+  test("a task that lost its run record still has its checkout collected", () => {
+    const task = createTask({ title: "t", repo, prompt: "p", worktree: true });
+    const worktreePath = `${repo}-wt-${task.id}`;
+    git(repo, "worktree", "add", "-q", "-b", `collie/${task.id}`, worktreePath);
+    transition(task.id, "running", { worktreePath });
+    updateTask(task.id, (t) => {
+      delete t.run;
+    });
+    transition(task.id, "failed", { failureReason: "spawn_failed" });
+
+    const lines = gc();
+    expect(lines.join("\n")).toContain(`${task.id}  worktree removed; deleted merged branch collie/${task.id}`);
+    expect(fs.existsSync(worktreePath)).toBe(false);
+    expect(git(repo, "branch", "--list", `collie/${task.id}`)).toBe("");
+  });
+
+  test("the main checkout is never taken for a task's, whatever branch it is on", () => {
+    const task = createTask({ title: "t", repo, prompt: "p", worktree: true });
+    git(repo, "checkout", "-q", "-b", `collie/${task.id}`);
+    transition(task.id, "running");
+    transition(task.id, "failed", { failureReason: "spawn_failed" });
+
+    gc();
+    expect(fs.existsSync(path.join(repo, "README.md"))).toBe(true);
+    expect(git(repo, "branch", "--list", `collie/${task.id}`)).not.toBe("");
+  });
+
   test("untracked files hold the worktree until --force", () => {
     const { id, worktreePath } = finishedTask();
     fs.writeFileSync(path.join(worktreePath, "AGENTS.md"), "notes\n");

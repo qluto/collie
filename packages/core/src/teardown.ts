@@ -1,4 +1,5 @@
-import { dirtyFiles } from "./git.ts";
+import * as fs from "node:fs";
+import { dirtyFiles, linkedWorktreesByBranch } from "./git.ts";
 import type { Task } from "./types.ts";
 
 /** The one HerdrClient method teardown needs — narrow so tests can stand in for the socket. */
@@ -16,8 +17,12 @@ export interface HerdrRequester {
  * Returns a one-line account for the human; never throws.
  */
 export async function teardownTask(task: Task, herdr: HerdrRequester): Promise<string> {
-  const worktreePath = task.run?.worktreePath;
-  const workspaceId = task.run?.workspaceId;
+  // The run record can be lost while the checkout and its workspace live on;
+  // git and herdr each still know their half, so ask them before giving up.
+  const worktreePath = task.run?.worktreePath
+    ?? (task.worktree && task.branch ? linkedWorktreesByBranch(task.repo).get(task.branch) : undefined);
+  const workspaceId = task.run?.workspaceId
+    ?? (task.worktree && worktreePath ? await workspaceHolding(worktreePath, herdr) : undefined);
 
   if (task.worktree && worktreePath && workspaceId) {
     const dirty = dirtyFiles(worktreePath);
@@ -40,4 +45,28 @@ export async function teardownTask(task: Task, herdr: HerdrRequester): Promise<s
     }
   }
   return "nothing to close";
+}
+
+/** The herdr workspace opened on a checkout, if one still is. */
+async function workspaceHolding(checkout: string, herdr: HerdrRequester): Promise<string | undefined> {
+  try {
+    const res = await herdr.request("workspace.list") as {
+      workspaces?: { workspace_id: string; worktree?: { checkout_path?: string } }[];
+    };
+    // git answers with the resolved path; herdr with the one it was opened by.
+    const wanted = realpathOr(checkout);
+    return res.workspaces
+      ?.find((w) => w.worktree?.checkout_path && realpathOr(w.worktree.checkout_path) === wanted)
+      ?.workspace_id;
+  } catch {
+    return undefined;
+  }
+}
+
+function realpathOr(p: string): string {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return p;
+  }
 }

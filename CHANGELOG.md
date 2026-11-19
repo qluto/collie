@@ -7,6 +7,14 @@ heading shape.
 
 ## [Unreleased]
 
+### Fixed
+- A finished task whose file no longer records its worktree can be cleaned up
+  again. `collie gc` went by `run.worktreePath` alone, so it skipped the
+  checkout and then could not delete the branch that checkout still held;
+  `d` and `collie done --close` answered "nothing to close". Both now fall back
+  to asking git which checkout holds the task's branch, and the teardown asks
+  herdr which workspace is open on it.
+
 ## [0.4.0] - 2026-11-14
 
 ### Added
