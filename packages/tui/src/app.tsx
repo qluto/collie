@@ -307,7 +307,7 @@ function App(): React.JSX.Element {
     if (prompt === task.prompt.trim()) return;
     act(() => {
       if (!replaceQueuedPrompt(task.id, prompt)) {
-        flashMsg(`${task.id} is no longer queued; prompt unchanged`);
+        flashMsg(`${task.id} was started or removed meanwhile; prompt unchanged`);
       }
     });
   };

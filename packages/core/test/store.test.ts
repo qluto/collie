@@ -292,6 +292,24 @@ describe("replaceQueuedPrompt", () => {
     expect(getTask(t.id)).toMatchObject({ status: "running", prompt: "old", run });
   });
 
+  test("a requeued task keeps the run record it came back with", () => {
+    const t = createTask({ title: "x", repo: REPO, prompt: "old" });
+    const run = { workspaceId: "w1", worktreePath: "/tmp/wt" };
+    transition(t.id, "running", run, { source: "test" });
+    transition(t.id, "queued", undefined, { source: "test" });
+
+    expect(replaceQueuedPrompt(t.id, "new")).toMatchObject({ prompt: "new", run });
+  });
+
+  test("a failed task is history too", () => {
+    const t = createTask({ title: "x", repo: REPO, prompt: "old" });
+    transition(t.id, "running", undefined, { source: "test" });
+    transition(t.id, "failed", { failureReason: "boom" }, { source: "test" });
+
+    expect(replaceQueuedPrompt(t.id, "new")).toBeNull();
+    expect(getTask(t.id)?.prompt).toBe("old");
+  });
+
   test("a task cancelled while the editor was open is not brought back", () => {
     const t = createTask({ title: "x", repo: REPO, prompt: "old" });
     cancelTask(t.id);

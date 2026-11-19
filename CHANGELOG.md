@@ -17,6 +17,11 @@ heading shape.
   only if the task is still queued. `e` in the Detail view follows the same
   queued-only rule as the task list.
 
+### Changed
+- As a consequence, `e` no longer reaches a task's frontmatter. Hand-editing
+  title, size, model and the like through it was never a supported path (task
+  files are the store's to write), but it did work for a queued task.
+
 ## [0.4.0] - 2026-11-14
 
 ### Added
