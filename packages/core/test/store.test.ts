@@ -22,7 +22,7 @@ function freshHome(): string {
 // so a single static import is fine as long as env is set before calls).
 import {
   createTask, deleteTask, getTask, listArchived, listTasks, transition, updateTask, cancelTask,
-  markDone, parseTaskFile, retryTask, serializeTask, tailEvents, IllegalTransitionError,
+  markDone, parseTaskFile, replaceQueuedPrompt, retryTask, serializeTask, tailEvents, IllegalTransitionError,
 } from "../src/index.ts";
 
 beforeEach(() => {
@@ -271,6 +271,32 @@ describe("transitions", () => {
     expect(last.from).toBe("queued");
     expect(last.to).toBe("deleted");
     expect(() => deleteTask(t.id)).toThrow(/no such task/);
+  });
+});
+
+describe("replaceQueuedPrompt", () => {
+  test("swaps the prompt of a queued task and leaves the rest alone", () => {
+    const t = createTask({ title: "x", repo: REPO, prompt: "old", priority: 7 });
+    const next = replaceQueuedPrompt(t.id, "new");
+    expect(next?.prompt).toBe("new");
+    expect(next?.rev).toBe(t.rev + 1);
+    expect(getTask(t.id)).toMatchObject({ prompt: "new", status: "queued", priority: 7 });
+  });
+
+  test("a task dispatched while the editor was open keeps its run state and its prompt", () => {
+    const t = createTask({ title: "x", repo: REPO, prompt: "old" });
+    const run = { paneId: "w1:p2", workspaceId: "w1", worktreePath: "/tmp/wt" };
+    transition(t.id, "running", run, { source: "test" });
+
+    expect(replaceQueuedPrompt(t.id, "new")).toBeNull();
+    expect(getTask(t.id)).toMatchObject({ status: "running", prompt: "old", run });
+  });
+
+  test("a task cancelled while the editor was open is not brought back", () => {
+    const t = createTask({ title: "x", repo: REPO, prompt: "old" });
+    cancelTask(t.id);
+    expect(replaceQueuedPrompt(t.id, "new")).toBeNull();
+    expect(getTask(t.id)).toBeNull();
   });
 });
 

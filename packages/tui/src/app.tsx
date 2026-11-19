@@ -6,8 +6,8 @@ import { spawnSync } from "node:child_process";
 import {
   DEFAULT_CONFIG, blockedUntil, cancelTask, computeForecast, configPath, createTask, diffSummary,
   discardTaskWork, discoverRepos, droppedTasks, forecastLine, formatClock, HerdrClient, installCommit,
-  listArchived, loadConfig, markDone, modeLabel, readLimits, readUpdateCheck, refreshBranchScan, refreshLimits, resolveMode, retryTask, runsDir,
-  stripPromptTemplate, taskFilePath, teardownTask, transition, updateTask,
+  listArchived, loadConfig, markDone, modeLabel, readLimits, readUpdateCheck, refreshBranchScan, refreshLimits, replaceQueuedPrompt, resolveMode, retryTask, runsDir,
+  stripPromptTemplate, teardownTask, transition, updateTask,
 } from "@collie/core";
 import type { Config, LimitSnapshot, Task, UpdateCheck } from "@collie/core";
 import { codeNotice } from "./notice.ts";
@@ -288,8 +288,28 @@ function App(): React.JSX.Element {
   };
 
   const openPromptEditor = (task: Task) => {
-    if (editFileInEditor(taskFilePath(task.id))) refresh();
-    else flashMsg("editor exited non-zero; file unchanged");
+    if (task.status !== "queued") {
+      flashMsg("e edits a queued task's prompt");
+      return;
+    }
+    // Never the task file itself: its frontmatter is the dispatcher's state,
+    // and an editor that outlives a tick would save a stale copy over it.
+    const raw = editInEditor(task.prompt);
+    if (raw === null) {
+      flashMsg("editor exited non-zero; prompt unchanged");
+      return;
+    }
+    const prompt = raw.trim();
+    if (prompt.length === 0) {
+      flashMsg("empty prompt; prompt unchanged");
+      return;
+    }
+    if (prompt === task.prompt.trim()) return;
+    act(() => {
+      if (!replaceQueuedPrompt(task.id, prompt)) {
+        flashMsg(`${task.id} is no longer queued; prompt unchanged`);
+      }
+    });
   };
 
   const submitNewTask = (draft: NewTaskDraft) => {
@@ -437,9 +457,7 @@ function App(): React.JSX.Element {
           flashMsg(`${task.id} starts on the next dispatcher tick`);
         } else flashMsg("s starts a queued task now");
       } else if (input === "e" && task) {
-        // A queued prompt is still editable; a started one is history.
-        if (task.status === "queued") openPromptEditor(task);
-        else flashMsg("e edits a queued task's prompt");
+        openPromptEditor(task);
       } else if ((input === "[" || input === "]") && task) {
         // j/k are list movement everywhere in this TUI and J is the jump, so
         // the queue's own axis gets brackets: earlier ← [ ] → later. The cursor

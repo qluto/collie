@@ -250,6 +250,26 @@ export function updateTask(id: string, mutate: (t: Task) => void, _opts?: { sour
   });
 }
 
+/**
+ * Replace a queued task's prompt and nothing else. An editor session outlasts
+ * dispatcher ticks, so the status is re-read under the lock rather than taken
+ * from whatever the caller saw before the editor opened: a task that left
+ * queued meanwhile has already had its prompt handed to a session. Returns
+ * null for that task, and for one that is gone.
+ */
+export function replaceQueuedPrompt(id: string, prompt: string): Task | null {
+  ensureDataDirs();
+  return withLock(() => {
+    const task = readTask(id);
+    if (!task || task.status !== "queued") return null;
+    task.prompt = prompt;
+    task.rev += 1;
+    task.updatedAt = new Date().toISOString();
+    writeTaskFile(task);
+    return task;
+  });
+}
+
 export function transition(
   id: string,
   to: TaskStatus,
