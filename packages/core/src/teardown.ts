@@ -47,17 +47,28 @@ export async function teardownTask(task: Task, herdr: HerdrRequester): Promise<s
   return "nothing to close";
 }
 
-/** The herdr workspace opened on a checkout, if one still is. */
+/**
+ * The one herdr workspace made for a checkout, if it can be told apart. herdr
+ * tags every workspace sitting in a checkout with its path — one a human
+ * opened there, one a reopened session made — so a path match alone is not
+ * "the task's workspace", and worktree.remove on the wrong one closes somebody
+ * else's panes. Anything short of a single linked-worktree match is no answer.
+ */
 async function workspaceHolding(checkout: string, herdr: HerdrRequester): Promise<string | undefined> {
   try {
     const res = await herdr.request("workspace.list") as {
-      workspaces?: { workspace_id: string; worktree?: { checkout_path?: string } }[];
+      workspaces?: {
+        workspace_id: string;
+        worktree?: { checkout_path?: string; is_linked_worktree?: boolean };
+      }[];
     };
     // git answers with the resolved path; herdr with the one it was opened by.
     const wanted = realpathOr(checkout);
-    return res.workspaces
-      ?.find((w) => w.worktree?.checkout_path && realpathOr(w.worktree.checkout_path) === wanted)
-      ?.workspace_id;
+    const held = (res.workspaces ?? []).filter((w) =>
+      w.worktree?.is_linked_worktree === true
+      && !!w.worktree.checkout_path
+      && realpathOr(w.worktree.checkout_path) === wanted);
+    return held.length === 1 ? held[0]!.workspace_id : undefined;
   } catch {
     return undefined;
   }
