@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import {
   HerdrError, announceStart, getTask, headCommit, reportTaskMetadata, taskLabel, resolveWorktreeBase,
-  runPostCreate, runsDir, transition, updateTask, worktreeSettingsFor,
+  runPostCreate, runsDir, taskWorktreePath, transition, updateTask, worktreeSettingsFor,
 } from "@collie/core";
 import type { Task } from "@collie/core";
 import { log, trackPane, untrackPane, type DispatcherCtx } from "./ctx.ts";
@@ -152,11 +152,7 @@ interface WorktreeResult {
  * response includes the new workspace + root pane (verified 0.7.1).
  */
 async function ensureWorktree(ctx: DispatcherCtx, task: Task): Promise<WorktreeResult | { error: string }> {
-  const wtPath = path.join(
-    ctx.config.defaults.worktreeRoot,
-    path.basename(task.repo),
-    task.id,
-  );
+  const wtPath = taskWorktreePath(ctx.config.defaults.worktreeRoot, task);
   const branch = task.branch ?? `collie/${task.id}`;
   // Resolved HERE, not at task creation: the whole value of the base is that it
   // was fetched moments ago. A task queued at 18:00 and dispatched at 03:00

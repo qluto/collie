@@ -13,7 +13,9 @@ heading shape.
   checkout and then could not delete the branch that checkout still held;
   `d` and `collie done --close` answered "nothing to close". Both now fall back
   to asking git which checkout holds the task's branch, and the teardown asks
-  herdr which workspace is open on it.
+  herdr which workspace is open on it. Only a checkout sitting where dispatch
+  puts one (`<worktree_root>/<repo>/<task id>`) is taken this way, so a
+  worktree of your own on a task's branch is never collected.
 
 ## [0.4.0] - 2026-11-14
 

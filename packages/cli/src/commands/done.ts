@@ -81,7 +81,8 @@ export async function runDoneCommand(argv: string[]): Promise<number> {
     let closed: string | undefined;
     const wantClose = values.close || configuredClose();
     if (wantClose) {
-      closed = await teardownTask(task, new HerdrClient(loadConfig().herdr.socketPath));
+      const config = loadConfig();
+      closed = await teardownTask(task, new HerdrClient(config.herdr.socketPath), config.defaults.worktreeRoot);
       console.log(`  ${closed}`);
     }
     // pointless when the pane just went away with the teardown

@@ -1,5 +1,5 @@
-import * as fs from "node:fs";
-import { dirtyFiles, linkedWorktreesByBranch } from "./git.ts";
+import { dirtyFiles } from "./git.ts";
+import { realpathOr, unrecordedCheckout } from "./worktree.ts";
 import type { Task } from "./types.ts";
 
 /** The one HerdrClient method teardown needs — narrow so tests can stand in for the socket. */
@@ -16,11 +16,16 @@ export interface HerdrRequester {
  *
  * Returns a one-line account for the human; never throws.
  */
-export async function teardownTask(task: Task, herdr: HerdrRequester): Promise<string> {
+export async function teardownTask(
+  task: Task,
+  herdr: HerdrRequester,
+  /** `defaults.worktree_root`; without it a lost run record is not looked past. */
+  worktreeRoot?: string,
+): Promise<string> {
   // The run record can be lost while the checkout and its workspace live on;
   // git and herdr each still know their half, so ask them before giving up.
   const worktreePath = task.run?.worktreePath
-    ?? (task.worktree && task.branch ? linkedWorktreesByBranch(task.repo).get(task.branch) : undefined);
+    ?? (worktreeRoot ? unrecordedCheckout(task, worktreeRoot) : undefined);
   const workspaceId = task.run?.workspaceId
     ?? (task.worktree && worktreePath ? await workspaceHolding(worktreePath, herdr) : undefined);
 
@@ -71,13 +76,5 @@ async function workspaceHolding(checkout: string, herdr: HerdrRequester): Promis
     return held.length === 1 ? held[0]!.workspace_id : undefined;
   } catch {
     return undefined;
-  }
-}
-
-function realpathOr(p: string): string {
-  try {
-    return fs.realpathSync(p);
-  } catch {
-    return p;
   }
 }

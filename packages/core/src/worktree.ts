@@ -1,7 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawn } from "node:child_process";
-import type { Config, WorktreeSettings } from "./types.ts";
+import { linkedWorktreesByBranch } from "./git.ts";
+import type { Config, Task, WorktreeSettings } from "./types.ts";
 
 /**
  * launchd hands the dispatcher a PATH that is not a login shell's — the same
@@ -13,12 +14,36 @@ import type { Config, WorktreeSettings } from "./types.ts";
  */
 const PATH_PREFIX = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
 
-function realpathOr(p: string): string {
+export function realpathOr(p: string): string {
   try {
     return fs.realpathSync(p);
   } catch {
     return p;
   }
+}
+
+/** Where a task's checkout goes. collie picks the path; herdr only makes it. */
+export function taskWorktreePath(worktreeRoot: string, task: Pick<Task, "repo" | "id">): string {
+  return path.join(worktreeRoot, path.basename(task.repo), task.id);
+}
+
+/**
+ * The checkout of a task whose run record no longer names one. git still knows
+ * which checkout holds the task's branch, but holding the branch is not enough
+ * to call it the task's: a human can check `collie/<id>` out in a worktree of
+ * their own once the original is gone. Only a checkout sitting exactly where
+ * dispatch would have put it counts, so a moved `worktree_root` finds nothing
+ * rather than something else.
+ */
+export function unrecordedCheckout(
+  task: Task,
+  worktreeRoot: string,
+  held: Map<string, string> = linkedWorktreesByBranch(task.repo),
+): string | undefined {
+  if (!task.worktree || !task.branch) return undefined;
+  const found = held.get(task.branch);
+  if (!found) return undefined;
+  return realpathOr(found) === realpathOr(taskWorktreePath(worktreeRoot, task)) ? found : undefined;
 }
 
 /**

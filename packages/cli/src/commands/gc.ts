@@ -2,7 +2,8 @@ import * as fs from "node:fs";
 import { parseArgs } from "node:util";
 import {
   archivedTaskFilePath, branchState, commitsAhead, deleteMergedBranch, dirtyState, ensureDataDirs,
-  linkedWorktreesByBranch, listTasks, pruneWorktrees, removeWorktree, taskFilePath, withLock,
+  linkedWorktreesByBranch, listTasks, loadConfig, pruneWorktrees, removeWorktree, taskFilePath,
+  unrecordedCheckout, withLock,
   type BranchState, type Task,
 } from "@collie/core";
 
@@ -44,6 +45,7 @@ function collect(dryRun: boolean, force: boolean): Sweep {
     }
     return views.get(repo)!;
   };
+  const worktreeRoot = loadConfig().defaults.worktreeRoot;
   const checkouts = new Map<string, Map<string, string>>();
   const heldBy = (repo: string): Map<string, string> => {
     if (!checkouts.has(repo)) checkouts.set(repo, linkedWorktreesByBranch(repo));
@@ -62,7 +64,7 @@ function collect(dryRun: boolean, force: boolean): Sweep {
     const { tips, merged } = view(task.repo);
     // A task can lose its run record and keep its checkout. Going by the record
     // alone would skip that checkout and then fail on the branch it holds.
-    const wt = task.run?.worktreePath ?? heldBy(task.repo).get(branch);
+    const wt = task.run?.worktreePath ?? unrecordedCheckout(task, worktreeRoot, heldBy(task.repo));
     const checkoutLeft = !!wt && fs.existsSync(wt);
     const branchLeft = tips.has(branch);
     if (!branchLeft && !checkoutLeft) {

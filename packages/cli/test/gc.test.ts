@@ -95,20 +95,38 @@ describe("collie gc", () => {
     expect(fs.existsSync(worktreePath)).toBe(false);
   });
 
-  test("a task that lost its run record still has its checkout collected", () => {
-    const task = createTask({ title: "t", repo, prompt: "p", worktree: true });
-    const worktreePath = `${repo}-wt-${task.id}`;
-    git(repo, "worktree", "add", "-q", "-b", `collie/${task.id}`, worktreePath);
-    transition(task.id, "running", { worktreePath });
-    updateTask(task.id, (t) => {
-      delete t.run;
-    });
-    transition(task.id, "failed", { failureReason: "spawn_failed" });
+  describe("a task that lost its run record", () => {
+    let root: string;
 
-    const lines = gc();
-    expect(lines.join("\n")).toContain(`${task.id}  worktree removed; deleted merged branch collie/${task.id}`);
-    expect(fs.existsSync(worktreePath)).toBe(false);
-    expect(git(repo, "branch", "--list", `collie/${task.id}`)).toBe("");
+    /** A failed worktree task with no run record, its branch checked out at `at(root, id)`. */
+    function lostRecord(at: (root: string, id: string) => string): { id: string; worktreePath: string } {
+      root = fs.mkdtempSync(path.join(os.tmpdir(), "collie-gc-root-"));
+      fs.writeFileSync(path.join(process.env.COLLIE_HOME!, "config.toml"), `[defaults]\nworktree_root = "${root}"\n`);
+      const task = createTask({ title: "t", repo, prompt: "p", worktree: true });
+      const worktreePath = at(root, task.id);
+      git(repo, "worktree", "add", "-q", "-b", `collie/${task.id}`, worktreePath);
+      transition(task.id, "running", { worktreePath });
+      updateTask(task.id, (t) => {
+        delete t.run;
+      });
+      transition(task.id, "failed", { failureReason: "spawn_failed" });
+      return { id: task.id, worktreePath };
+    }
+
+    test("still has its checkout collected from where dispatch put it", () => {
+      const { id, worktreePath } = lostRecord((r, taskId) => path.join(r, path.basename(repo), taskId));
+      const lines = gc();
+      expect(lines.join("\n")).toContain(`${id}  worktree removed; deleted merged branch collie/${id}`);
+      expect(fs.existsSync(worktreePath)).toBe(false);
+      expect(git(repo, "branch", "--list", `collie/${id}`)).toBe("");
+    });
+
+    test("leaves alone a checkout of its branch that sits anywhere else", () => {
+      const { id, worktreePath } = lostRecord((_, taskId) => `${repo}-mine-${taskId}`);
+      gc();
+      expect(fs.existsSync(worktreePath)).toBe(true);
+      expect(git(repo, "branch", "--list", `collie/${id}`)).not.toBe("");
+    });
   });
 
   test("the main checkout is never taken for a task's, whatever branch it is on", () => {
