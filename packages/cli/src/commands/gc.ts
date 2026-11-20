@@ -2,7 +2,8 @@ import * as fs from "node:fs";
 import { parseArgs } from "node:util";
 import {
   archivedTaskFilePath, branchState, commitsAhead, deleteMergedBranch, dirtyState, ensureDataDirs,
-  listTasks, pruneWorktrees, removeWorktree, taskFilePath, withLock,
+  linkedWorktreesByBranch, listTasks, loadConfig, pruneWorktrees, removeWorktree, taskFilePath,
+  unrecordedCheckout, withLock,
   type BranchState, type Task,
 } from "@collie/core";
 
@@ -44,12 +45,16 @@ function collect(dryRun: boolean, force: boolean): Sweep {
     }
     return views.get(repo)!;
   };
+  const worktreeRoot = loadConfig().defaults.worktreeRoot;
+  const checkouts = new Map<string, Map<string, string>>();
+  const heldBy = (repo: string): Map<string, string> => {
+    if (!checkouts.has(repo)) checkouts.set(repo, linkedWorktreesByBranch(repo));
+    return checkouts.get(repo)!;
+  };
 
   const sweep: Sweep = { verdicts: [], clean: 0 };
   for (const task of finished) {
     const branch = task.branch!;
-    const wt = task.run?.worktreePath;
-    const checkoutLeft = !!wt && fs.existsSync(wt);
     // A repo that is gone took its branches and checkouts with it; there is
     // nothing left for gc to act on, now or on any future run.
     if (!fs.existsSync(task.repo)) {
@@ -57,6 +62,10 @@ function collect(dryRun: boolean, force: boolean): Sweep {
       continue;
     }
     const { tips, merged } = view(task.repo);
+    // A task can lose its run record and keep its checkout. Going by the record
+    // alone would skip that checkout and then fail on the branch it holds.
+    const wt = task.run?.worktreePath ?? unrecordedCheckout(task, worktreeRoot, heldBy(task.repo));
+    const checkoutLeft = !!wt && fs.existsSync(wt);
     const branchLeft = tips.has(branch);
     if (!branchLeft && !checkoutLeft) {
       sweep.clean++;

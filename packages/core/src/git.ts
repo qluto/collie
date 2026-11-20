@@ -196,6 +196,27 @@ export function removeWorktree(
 }
 
 /**
+ * Linked checkouts by the branch they hold. The task file's run record is the
+ * usual way to a task's checkout, but it is not the only copy of that fact:
+ * git knows which checkout holds `collie/<id>`, and still knows after the
+ * record is lost. The main checkout is left out — it is never a task's to
+ * remove, whatever branch a human parked it on.
+ */
+export function linkedWorktreesByBranch(repoRoot: string): Map<string, string> {
+  const res = git(repoRoot, ["worktree", "list", "--porcelain"]);
+  const found = new Map<string, string>();
+  if (!res.ok) return found;
+  // Entries are blank-line separated and the first is always the main checkout.
+  for (const entry of res.out.split(/\n\n+/).slice(1)) {
+    const lines = entry.split("\n");
+    const dir = lines.find((l) => l.startsWith("worktree "))?.slice("worktree ".length);
+    const ref = lines.find((l) => l.startsWith("branch refs/heads/"))?.slice("branch refs/heads/".length);
+    if (dir && ref) found.set(ref, dir);
+  }
+  return found;
+}
+
+/**
  * Drops admin entries for checkouts whose directory a human deleted by hand.
  * Safe by construction: prune only forgets worktrees that are already gone.
  */

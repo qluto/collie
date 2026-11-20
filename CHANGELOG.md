@@ -5,9 +5,17 @@ versions follow [SemVer](https://semver.org/). `collie update` prints the
 sections between your old and new version, so keep the `## [X.Y.Z] - date`
 heading shape.
 
-## [Unreleased]
+## [0.4.1] - 2026-11-20
 
 ### Fixed
+- A finished task whose file no longer records its worktree can be cleaned up
+  again. `collie gc` went by `run.worktreePath` alone, so it skipped the
+  checkout and then could not delete the branch that checkout still held;
+  `d` and `collie done --close` answered "nothing to close". Both now fall back
+  to asking git which checkout holds the task's branch, and the teardown asks
+  herdr which workspace is open on it. Only a checkout sitting where dispatch
+  puts one (`<worktree_root>/<repo>/<task id>`) is taken this way, so a
+  worktree of your own on a task's branch is never collected.
 - Editing a queued task's prompt with `e` in the TUI no longer opens the task
   file itself. The editor used to hold the whole file, frontmatter included, so
   a task the dispatcher started while the editor was open was saved back as

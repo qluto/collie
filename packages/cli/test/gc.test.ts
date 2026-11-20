@@ -95,6 +95,51 @@ describe("collie gc", () => {
     expect(fs.existsSync(worktreePath)).toBe(false);
   });
 
+  describe("a task that lost its run record", () => {
+    let root: string;
+
+    /** A failed worktree task with no run record, its branch checked out at `at(root, id)`. */
+    function lostRecord(at: (root: string, id: string) => string): { id: string; worktreePath: string } {
+      root = fs.mkdtempSync(path.join(os.tmpdir(), "collie-gc-root-"));
+      fs.writeFileSync(path.join(process.env.COLLIE_HOME!, "config.toml"), `[defaults]\nworktree_root = "${root}"\n`);
+      const task = createTask({ title: "t", repo, prompt: "p", worktree: true });
+      const worktreePath = at(root, task.id);
+      git(repo, "worktree", "add", "-q", "-b", `collie/${task.id}`, worktreePath);
+      transition(task.id, "running", { worktreePath });
+      updateTask(task.id, (t) => {
+        delete t.run;
+      });
+      transition(task.id, "failed", { failureReason: "spawn_failed" });
+      return { id: task.id, worktreePath };
+    }
+
+    test("still has its checkout collected from where dispatch put it", () => {
+      const { id, worktreePath } = lostRecord((r, taskId) => path.join(r, path.basename(repo), taskId));
+      const lines = gc();
+      expect(lines.join("\n")).toContain(`${id}  worktree removed; deleted merged branch collie/${id}`);
+      expect(fs.existsSync(worktreePath)).toBe(false);
+      expect(git(repo, "branch", "--list", `collie/${id}`)).toBe("");
+    });
+
+    test("leaves alone a checkout of its branch that sits anywhere else", () => {
+      const { id, worktreePath } = lostRecord((_, taskId) => `${repo}-mine-${taskId}`);
+      gc();
+      expect(fs.existsSync(worktreePath)).toBe(true);
+      expect(git(repo, "branch", "--list", `collie/${id}`)).not.toBe("");
+    });
+  });
+
+  test("the main checkout is never taken for a task's, whatever branch it is on", () => {
+    const task = createTask({ title: "t", repo, prompt: "p", worktree: true });
+    git(repo, "checkout", "-q", "-b", `collie/${task.id}`);
+    transition(task.id, "running");
+    transition(task.id, "failed", { failureReason: "spawn_failed" });
+
+    gc();
+    expect(fs.existsSync(path.join(repo, "README.md"))).toBe(true);
+    expect(git(repo, "branch", "--list", `collie/${task.id}`)).not.toBe("");
+  });
+
   test("untracked files hold the worktree until --force", () => {
     const { id, worktreePath } = finishedTask();
     fs.writeFileSync(path.join(worktreePath, "AGENTS.md"), "notes\n");
