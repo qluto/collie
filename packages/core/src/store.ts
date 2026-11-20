@@ -250,6 +250,29 @@ export function updateTask(id: string, mutate: (t: Task) => void, _opts?: { sour
   });
 }
 
+/**
+ * Replace a queued task's prompt and nothing else. An editor session outlasts
+ * dispatcher ticks, so the status is re-read under the lock rather than taken
+ * from whatever the caller saw before the editor opened. Returns null for a
+ * task that left queued meanwhile, and for one that is gone.
+ *
+ * Queued is not quite "not yet handed over": dispatch copies the prompt into
+ * the run directory first and transitions to running last, so an edit saved
+ * inside that window is stored here but never reaches the session.
+ */
+export function replaceQueuedPrompt(id: string, prompt: string): Task | null {
+  ensureDataDirs();
+  return withLock(() => {
+    const task = readTask(id);
+    if (!task || task.status !== "queued") return null;
+    task.prompt = prompt;
+    task.rev += 1;
+    task.updatedAt = new Date().toISOString();
+    writeTaskFile(task);
+    return task;
+  });
+}
+
 export function transition(
   id: string,
   to: TaskStatus,
