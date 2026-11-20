@@ -5,7 +5,7 @@ versions follow [SemVer](https://semver.org/). `collie update` prints the
 sections between your old and new version, so keep the `## [X.Y.Z] - date`
 heading shape.
 
-## [Unreleased]
+## [0.4.1] - 2026-11-20
 
 ### Fixed
 - A finished task whose file no longer records its worktree can be cleaned up
@@ -16,6 +16,19 @@ heading shape.
   herdr which workspace is open on it. Only a checkout sitting where dispatch
   puts one (`<worktree_root>/<repo>/<task id>`) is taken this way, so a
   worktree of your own on a task's branch is never collected.
+- Editing a queued task's prompt with `e` in the TUI no longer opens the task
+  file itself. The editor used to hold the whole file, frontmatter included, so
+  a task the dispatcher started while the editor was open was saved back as
+  queued with its pane and worktree record gone: every re-dispatch then failed
+  with `agent_name_taken`, and neither `d` nor `collie gc` could find the
+  worktree to remove. The editor now gets the prompt alone, and it is saved
+  only if the task is still queued. `e` in the Detail view follows the same
+  queued-only rule as the task list.
+
+### Changed
+- As a consequence, `e` no longer reaches a task's frontmatter. Hand-editing
+  title, size, model and the like through it was never a supported path (task
+  files are the store's to write), but it did work for a queued task.
 
 ## [0.4.0] - 2026-11-14
 

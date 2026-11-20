@@ -53,7 +53,7 @@ export function editInEditor(
   }
 }
 
-/** Edit an existing file in place with $EDITOR (config.toml, task files). */
+/** Edit an existing file in place with $EDITOR (config.toml). */
 export function editFileInEditor(filePath: string): boolean {
   const editor = process.env.EDITOR ?? "vi";
   const wasRaw = process.stdin.isRaw;
